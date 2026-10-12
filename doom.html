@@ -22,12 +22,13 @@
     position: fixed;
     top: 5px; left: 5px;
     color: #0f0;
-    font-size: 12px;
+    font-size: 13px;
     z-index: 999;
-    background: rgba(0,0,0,0.6);
-    padding: 4px 8px;
+    background: rgba(0,0,0,0.8);
+    padding: 6px 10px;
     white-space: pre;
     pointer-events: none;
+    border: 1px solid #0f0;
   }
 </style>
 </head>
@@ -72,6 +73,14 @@ var map = [
   [1,0,0,0,1,1,1,1,1,0,1,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
+
+// Pomocnicza - czy pole jest ścianą
+function isWall(x, y) {
+  var mx = Math.floor(x);
+  var my = Math.floor(y);
+  if (mx < 0 || mx >= 16 || my < 0 || my >= 16) return true;
+  return map[my][mx] === 1;
+}
 
 // ===== GRACZ =====
 var player = {
@@ -128,52 +137,27 @@ function shoot() {
 
 // ===== PAD =====
 var padIndex = null;
-var prevBtn = {};
 
-// Wyszukiwanie pada - ZAWSZE świeże zapytanie
 function getPad() {
   if (!navigator.getGamepads) return null;
   var pads = navigator.getGamepads();
-  // Najpierw próbuj zapamiętany indeks
   if (padIndex !== null && pads[padIndex]) return pads[padIndex];
-  // Potem szukaj jakiegokolwiek
   for (var i = 0; i < pads.length; i++) {
     if (pads[i]) { padIndex = i; return pads[i]; }
   }
   return null;
 }
 
-window.addEventListener("gamepadconnected", function(e) {
-  padIndex = e.gamepad.index;
-  log("PAD: " + e.gamepad.id.substring(0,24));
-});
-
-// Sprawdź czy pada da się znaleźć od razu (bez eventu)
-function checkPad() {
-  var gp = getPad();
-  if (gp) log("PAD: " + gp.id.substring(0,24));
-  else setTimeout(checkPad, 500);
-}
-checkPad();
-
 function padPressed(idx) {
   var gp = getPad();
   if (!gp || !gp.buttons[idx]) return false;
   var b = gp.buttons[idx];
-  // Sprawdź oba warianty - pressed LUB value
   return b.pressed === true || (typeof b.value === "number" && b.value > 0.5);
 }
 
-function padJustPressed(idx) {
-  var now = padPressed(idx);
-  var was = prevBtn[idx] || false;
-  prevBtn[idx] = now;
-  return now && !was;
-}
-
-// D-Pad: 12=UP, 13=DOWN, 14=LEFT, 15=RIGHT
+// D-Pad
 var DPAD_UP = 12, DPAD_DOWN = 13, DPAD_LEFT = 14, DPAD_RIGHT = 15;
-var BTN_A = 0, BTN_B = 1, BTN_X = 2, BTN_Y = 3;
+var BTN_A = 0, BTN_B = 1;
 var BTN_L = 4, BTN_R = 5, BTN_ZL = 6, BTN_ZR = 7;
 
 var DEAD = 0.18;
@@ -182,6 +166,10 @@ function dz(v) {
   var s = v > 0 ? 1 : -1;
   return s * ((Math.abs(v) - DEAD) / (1 - DEAD));
 }
+
+// Zmienne do debug
+var lastMoveDir = "-";
+var lastLX = 0;
 
 function rotatePlayer(rot) {
   var c = Math.cos(rot), s = Math.sin(rot);
@@ -194,25 +182,33 @@ function rotatePlayer(rot) {
 }
 
 function tryMove(mx, my) {
-  var nx = player.x + mx;
-  var ny = player.y + my;
-  if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-  if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
+  // Próbuj X
+  if (!isWall(player.x + mx, player.y)) {
+    player.x += mx;
+  }
+  // Próbuj Y
+  if (!isWall(player.x, player.y + my)) {
+    player.y += my;
+  }
 }
 
 function updatePad() {
   var gp = getPad();
   if (!gp) return;
 
-  var speed = 0.08;
-  var rotSpeed = 0.055;
+  var speed = 0.05;
+  var rotSpeed = 0.04;
 
   // ===== D-PAD = CHODZENIE =====
   var mvx = 0, mvy = 0;
-  if (padPressed(DPAD_UP))    { mvx += player.dirX; mvy += player.dirY; }
-  if (padPressed(DPAD_DOWN))  { mvx -= player.dirX; mvy -= player.dirY; }
-  if (padPressed(DPAD_LEFT))  { mvx += player.dirY; mvy -= player.dirX; }
-  if (padPressed(DPAD_RIGHT)) { mvx -= player.dirY; mvy += player.dirX; }
+  var dirNames = [];
+
+  if (padPressed(DPAD_UP))    { mvx += player.dirX; mvy += player.dirY; dirNames.push("UP"); }
+  if (padPressed(DPAD_DOWN))  { mvx -= player.dirX; mvy -= player.dirY; dirNames.push("DN"); }
+  if (padPressed(DPAD_LEFT))  { mvx += player.dirY; mvy -= player.dirX; dirNames.push("LF"); }
+  if (padPressed(DPAD_RIGHT)) { mvx -= player.dirY; mvy += player.dirX; dirNames.push("RT"); }
+
+  lastMoveDir = dirNames.length > 0 ? dirNames.join("+") : "-";
 
   if (mvx !== 0 || mvy !== 0) {
     var len = Math.sqrt(mvx*mvx + mvy*mvy);
@@ -223,6 +219,7 @@ function updatePad() {
 
   // ===== LEWY DRĄŻEK = OBRÓT =====
   var lx = dz(gp.axes[0] || 0);
+  lastLX = lx;
   if (lx !== 0) {
     rotatePlayer(lx * rotSpeed);
   }
@@ -234,12 +231,12 @@ function updatePad() {
   }
 
   // ===== RESTART =====
-  if (padJustPressed(BTN_A) || padJustPressed(BTN_B)) {
-    if (player.hp <= 0) restart();
+  if ((padPressed(BTN_A) || padPressed(BTN_B)) && player.hp <= 0) {
+    restart();
   }
 }
 
-// ===== KLAWIATURA (test na PC) =====
+// ===== KLAWIATURA =====
 var keys = {};
 window.addEventListener("keydown", function(e) {
   keys[e.key.toLowerCase()] = true;
@@ -251,12 +248,12 @@ window.addEventListener("keyup", function(e) {
 });
 
 function updateKeyboard() {
-  var speed = 0.08;
-  var rotSpeed = 0.055;
+  var speed = 0.05;
+  var rotSpeed = 0.04;
 
   var mvx = 0, mvy = 0;
-  if (keys["arrowup"])    { mvx += player.dirX; mvy += player.dirY; }
-  if (keys["arrowdown"])  { mvx -= player.dirX; mvy -= player.dirY; }
+  if (keys["arrowup"] || keys["w"])    { mvx += player.dirX; mvy += player.dirY; }
+  if (keys["arrowdown"] || keys["s"])  { mvx -= player.dirX; mvy -= player.dirY; }
   if (keys["arrowleft"])  { mvx += player.dirY; mvy -= player.dirX; }
   if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; }
 
@@ -482,12 +479,12 @@ function tick() {
   if (now - fpsTime > 1000) {
     var gp = getPad();
     var padTxt = gp ? "OK" : "BRAK";
-    var up = gp && padPressed(12) ? "1" : "0";
-    var dn = gp && padPressed(13) ? "1" : "0";
-    var lf = gp && padPressed(14) ? "1" : "0";
-    var rt = gp && padPressed(15) ? "1" : "0";
-    var lx = gp ? (gp.axes[0]||0).toFixed(2) : "-";
-    log("FPS:" + frames + " PAD:" + padTxt + " UP:" + up + " DN:" + dn + " LF:" + lf + " RT:" + rt + " LX:" + lx);
+    log(
+      "FPS:" + frames + " PAD:" + padTxt +
+      "\nDIR:" + lastMoveDir +
+      "\nPOS: " + player.x.toFixed(2) + ", " + player.y.toFixed(2) +
+      "\nLX:" + lastLX.toFixed(2)
+    );
     frames = 0;
     fpsTime = now;
   }
