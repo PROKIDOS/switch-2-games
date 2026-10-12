@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Detektor pada</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 18px;
+    padding: 20px;
+  }
+  h1 { color: #e60012; font-size: 24px; margin-bottom: 15px; }
+  #pads { color: #fff; margin-bottom: 20px; font-size: 14px; }
+  .btn {
+    display: inline-block;
+    padding: 10px 14px;
+    margin: 4px;
+    border: 2px solid #444;
+    border-radius: 6px;
+    min-width: 60px;
+    text-align: center;
+    color: #666;
+    background: #1a1a1a;
+  }
+  .btn.on {
+    background: #e60012;
+    color: #fff;
+    border-color: #ff4444;
+    box-shadow: 0 0 15px #e60012;
+  }
+  .axis {
+    margin: 6px 0;
+    color: #aaa;
+  }
+  .axis .bar {
+    display: inline-block;
+    width: 200px;
+    height: 14px;
+    background: #222;
+    border: 1px solid #444;
+    vertical-align: middle;
+    margin-left: 8px;
+    position: relative;
+  }
+  .axis .fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    background: #0f0;
+  }
+  .axis .val { color: #0f0; }
+  #status { color: #ff0; margin-top: 20px; }
+</style>
+</head>
+<body>
+<h1>DETEKTOR PADA - Switch 2</h1>
+<div id="pads">Szukam pada... Kliknij gdziekolwiek i rusz drążkiem / wciśnij przyciski.</div>
+<div id="buttons"></div>
+<div id="axes"></div>
+<div id="status"></div>
+
+<script>
+var padsEl = document.getElementById("pads");
+var buttonsEl = document.getElementById("buttons");
+var axesEl = document.getElementById("axes");
+var statusEl = document.getElementById("status");
+
+var padIndex = null;
+
+function findPad() {
+  var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (var i = 0; i < pads.length; i++) {
+    if (pads[i]) {
+      if (padIndex !== i) {
+        padIndex = i;
+        padsEl.textContent = "PAD [" + i + "]: " + pads[i].id + " | buttons: " + pads[i].buttons.length + " | axes: " + pads[i].axes.length;
+      }
+      return pads[i];
+    }
+  }
+  return null;
+}
+
+function buildUI(gp) {
+  if (buttonsEl.children.length !== gp.buttons.length) {
+    buttonsEl.innerHTML = "";
+    for (var i = 0; i < gp.buttons.length; i++) {
+      var d = document.createElement("div");
+      d.className = "btn";
+      d.id = "btn" + i;
+      d.textContent = "B" + i;
+      buttonsEl.appendChild(d);
+    }
+  }
+  if (axesEl.children.length !== gp.axes.length) {
+    axesEl.innerHTML = "";
+    for (var i = 0; i < gp.axes.length; i++) {
+      var a = document.createElement("div");
+      a.className = "axis";
+      a.innerHTML = "Oś " + i + ": <span class='val' id='axval" + i + "'>0.00</span>" +
+                    "<span class='bar'><span class='fill' id='axfill" + i + "'></span></span>";
+      axesEl.appendChild(a);
+    }
+  }
+}
+
+function update() {
+  var gp = findPad();
+  if (!gp) {
+    padsEl.textContent = "BRAK PADA. Kliknij gdziekolwiek na stronie i wciśnij przycisk na padzie.";
+    requestAnimationFrame(update);
+    return;
+  }
+  buildUI(gp);
+
+  var pressed = [];
+  for (var i = 0; i < gp.buttons.length; i++) {
+    var el = document.getElementById("btn" + i);
+    if (!el) continue;
+    var b = gp.buttons[i];
+    var isOn = b.pressed || b.value > 0.5;
+    if (isOn) {
+      el.className = "btn on";
+      pressed.push("B" + i);
+    } else {
+      el.className = "btn";
+    }
+  }
+
+  for (var i = 0; i < gp.axes.length; i++) {
+    var v = gp.axes[i];
+    var valEl = document.getElementById("axval" + i);
+    var fillEl = document.getElementById("axfill" + i);
+    if (valEl) valEl.textContent = v.toFixed(2);
+    if (fillEl) {
+      var pct = (v + 1) / 2 * 100;
+      fillEl.style.left = pct + "%";
+      fillEl.style.width = "2px";
+      fillEl.style.transform = "translateX(-1px)";
+    }
+  }
+
+  statusEl.textContent = pressed.length > 0 ? "WCIŚNIĘTE: " + pressed.join(", ") : "";
+
+  requestAnimationFrame(update);
+}
+
+update();
+</script>
+</body>
+</html>
