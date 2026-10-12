@@ -156,7 +156,6 @@ var DPAD_UP = 12, DPAD_DOWN = 13, DPAD_LEFT = 14, DPAD_RIGHT = 15;
 var BTN_A = 0, BTN_B = 1, BTN_X = 2, BTN_Y = 3;
 var BTN_L = 4, BTN_R = 5, BTN_ZL = 6, BTN_ZR = 7;
 
-// Martwa strefa dla drążka
 var DEAD = 0.18;
 function dz(v) {
   if (Math.abs(v) < DEAD) return 0;
@@ -164,6 +163,7 @@ function dz(v) {
   return s * ((Math.abs(v) - DEAD) / (1 - DEAD));
 }
 
+// Obrót gracza wokół własnej osi
 function rotatePlayer(rot) {
   var c = Math.cos(rot), s = Math.sin(rot);
   var odx = player.dirX;
@@ -172,6 +172,14 @@ function rotatePlayer(rot) {
   var opx = player.planeX;
   player.planeX = player.planeX * c - player.planeY * s;
   player.planeY = opx * s + player.planeY * c;
+}
+
+// Przesunięcie gracza z kolizją
+function tryMove(mx, my) {
+  var nx = player.x + mx;
+  var ny = player.y + my;
+  if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
+  if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
 }
 
 function updatePad() {
@@ -186,50 +194,36 @@ function updatePad() {
   if (!gp) return;
 
   var speed = 0.08;
-  var rotSpeed = 0.06;
+  var rotSpeed = 0.055;
 
   // ===== D-PAD = CHODZENIE =====
-  // ↑ = przód, ↓ = tył
-  if (padPressed(DPAD_UP)) {
-    var nx = player.x + player.dirX * speed;
-    var ny = player.y + player.dirY * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-  }
-  if (padPressed(DPAD_DOWN)) {
-    var nx = player.x - player.dirX * speed;
-    var ny = player.y - player.dirY * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-  }
-  // ← = strafe w lewo, → = strafe w prawo
-  if (padPressed(DPAD_LEFT)) {
-    var nx = player.x + player.dirY * speed;
-    var ny = player.y - player.dirX * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-  }
-  if (padPressed(DPAD_RIGHT)) {
-    var nx = player.x - player.dirY * speed;
-    var ny = player.y + player.dirX * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
+  var mvx = 0, mvy = 0;
+  if (padPressed(DPAD_UP))    { mvx += player.dirX; mvy += player.dirY; }
+  if (padPressed(DPAD_DOWN))  { mvx -= player.dirX; mvy -= player.dirY; }
+  if (padPressed(DPAD_LEFT))  { mvx += player.dirY; mvy -= player.dirX; } // strafe lewo
+  if (padPressed(DPAD_RIGHT)) { mvx -= player.dirY; mvy += player.dirX; } // strafe prawo
+
+  if (mvx !== 0 || mvy !== 0) {
+    var len = Math.sqrt(mvx*mvx + mvy*mvy);
+    mvx = mvx / len * speed;
+    mvy = mvy / len * speed;
+    tryMove(mvx, mvy);
   }
 
   // ===== LEWY DRĄŻEK = OBRÓT =====
-  // Oś X lewego drążka = obrót (lewo/prawo)
   var lx = dz(gp.axes[0] || 0);
   if (lx !== 0) {
-    rotatePlayer(-lx * rotSpeed);
+    // lx > 0 (drążek w prawo) => obrót w prawo (dodatni)
+    rotatePlayer(lx * rotSpeed);
   }
 
-  // ===== STRZAŁ: ZR / ZL / R / L =====
+  // ===== STRZAŁ =====
   if (padPressed(BTN_ZR) || padPressed(BTN_ZL) || padPressed(BTN_R) || padPressed(BTN_L)) {
     var now = Date.now();
     if (now - lastShot > 180) { lastShot = now; shoot(); }
   }
 
-  // ===== RESTART: A / B =====
+  // ===== RESTART =====
   if (padJustPressed(BTN_A) || padJustPressed(BTN_B)) {
     if (player.hp <= 0) restart();
   }
@@ -248,33 +242,22 @@ window.addEventListener("keyup", function(e) {
 
 function updateKeyboard() {
   var speed = 0.08;
-  var rotSpeed = 0.06;
+  var rotSpeed = 0.055;
 
   // Strzałki = D-Pad (chodzenie)
-  if (keys["arrowup"]) {
-    var nx = player.x + player.dirX * speed;
-    var ny = player.y + player.dirY * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
+  var mvx = 0, mvy = 0;
+  if (keys["arrowup"])    { mvx += player.dirX; mvy += player.dirY; }
+  if (keys["arrowdown"])  { mvx -= player.dirX; mvy -= player.dirY; }
+  if (keys["arrowleft"])  { mvx += player.dirY; mvy -= player.dirX; }
+  if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; }
+
+  if (mvx !== 0 || mvy !== 0) {
+    var len = Math.sqrt(mvx*mvx + mvy*mvy);
+    mvx = mvx / len * speed;
+    mvy = mvy / len * speed;
+    tryMove(mvx, mvy);
   }
-  if (keys["arrowdown"]) {
-    var nx = player.x - player.dirX * speed;
-    var ny = player.y - player.dirY * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-  }
-  if (keys["arrowleft"]) {
-    var nx = player.x + player.dirY * speed;
-    var ny = player.y - player.dirX * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-  }
-  if (keys["arrowright"]) {
-    var nx = player.x - player.dirY * speed;
-    var ny = player.y + player.dirX * speed;
-    if (map[Math.floor(player.y)][Math.floor(nx)] !== 1) player.x = nx;
-    if (map[Math.floor(ny)][Math.floor(player.x)] !== 1) player.y = ny;
-  }
+
   // Q/E = obrót (jak lewy drążek)
   if (keys["q"]) rotatePlayer(-rotSpeed);
   if (keys["e"]) rotatePlayer(rotSpeed);
@@ -364,7 +347,6 @@ function render() {
     ctx.fillRect(x, ds, 1, de - ds);
   }
 
-  // Wrogowie
   var list = [];
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
@@ -423,7 +405,6 @@ function render() {
     }
   }
 
-  // Broń
   var gunW = Math.floor(W * 0.12);
   var gunH = Math.floor(H * 0.25);
   var gunX = Math.floor(W/2 - gunW/2);
@@ -437,7 +418,6 @@ function render() {
   ctx.fillStyle = "#e60012";
   ctx.fillRect(gunX + gunW/2 - 3, gunY - 8, 6, 4);
 
-  // HUD
   ctx.fillStyle = "#e60012";
   ctx.font = "bold 18px monospace";
   ctx.textAlign = "left";
@@ -447,12 +427,10 @@ function render() {
   ctx.textAlign = "right";
   ctx.fillText("SCORE: " + player.score, W - 20, 30);
 
-  // Celownik
   ctx.strokeStyle = "#e60012";
   ctx.lineWidth = 2;
   ctx.strokeRect(W/2 - 12, H/2 - 12, 24, 24);
 
-  // Game over
   if (player.hp <= 0) {
     ctx.fillStyle = "rgba(150,0,0,0.75)";
     ctx.fillRect(0, 0, W, H);
@@ -495,7 +473,10 @@ function tick() {
   var now = Date.now();
   if (now - fpsTime > 1000) {
     var padTxt = padIndex === null ? "BRAK" : "OK";
-    log("FPS: " + frames + " | PAD: " + padTxt);
+    var gp = padIndex !== null ? navigator.getGamepads()[padIndex] : null;
+    var ax = gp ? (gp.axes[0]||0).toFixed(2) : "-";
+    var btnUp = gp && gp.buttons[12] && gp.buttons[12].pressed ? "1" : "0";
+    log("FPS:" + frames + " | PAD:" + padTxt + " | LX:" + ax + " | UP:" + btnUp);
     frames = 0;
     fpsTime = now;
   }
