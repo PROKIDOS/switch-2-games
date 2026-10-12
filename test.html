@@ -1,62 +1,148 @@
 <!DOCTYPE html>
-<html>
+<html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>Test D-Pad ruch</title>
+<title>DOOM - Switch 2 (Fast)</title>
 <style>
-  body {
+  html, body {
+    margin: 0; padding: 0;
     background: #000;
-    color: #0f0;
+    width: 100%; height: 100%;
+    overflow: hidden;
     font-family: monospace;
-    font-size: 28px;
-    padding: 30px;
-    margin: 0;
   }
-  .row {
-    margin: 15px 0;
-    padding: 15px;
-    border: 2px solid #333;
-    border-radius: 8px;
+  #game {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
   }
-  .on {
-    background: #e60012;
-    color: #fff;
-    border-color: #ff4444;
+  #debug {
+    position: fixed;
+    top: 5px; left: 5px;
+    color: #0f0;
+    font-size: 12px;
+    z-index: 999;
+    background: rgba(0,0,0,0.7);
+    padding: 4px 8px;
+    white-space: pre;
+    pointer-events: none;
   }
-  .label { color: #888; font-size: 18px; }
-  .value { color: #0f0; font-weight: bold; }
 </style>
 </head>
 <body>
-
-<div class="row" id="padInfo">PAD: szukam...</div>
-
-<div class="row" id="up">
-  <span class="label">D-Pad UP (B12):</span> <span class="value" id="upV">0</span>
-</div>
-<div class="row" id="down">
-  <span class="label">D-Pad DOWN (B13):</span> <span class="value" id="dnV">0</span>
-</div>
-<div class="row" id="left">
-  <span class="label">D-Pad LEFT (B14):</span> <span class="value" id="lfV">0</span>
-</div>
-<div class="row" id="right">
-  <span class="label">D-Pad RIGHT (B15):</span> <span class="value" id="rtV">0</span>
-</div>
-
-<div class="row">
-  <span class="label">POZYCJA X:</span> <span class="value" id="px">2.50</span>
-</div>
-<div class="row">
-  <span class="label">POZYCJA Y:</span> <span class="value" id="py">2.50</span>
-</div>
+<div id="debug">Start</div>
+<canvas id="game"></canvas>
 
 <script>
-var playerX = 2.5;
-var playerY = 2.5;
-var dirX = 1;
-var dirY = 0;
+"use strict";
+var debug = document.getElementById("debug");
+var log = function(m) { debug.textContent = m; };
 
+var canvas = document.getElementById("game");
+var ctx = canvas.getContext("2d", { alpha: false });
+
+// ===== STAŁA ROZDZIELCZOŚĆ RENDERU (retro, mało pikseli) =====
+var RW = 320;   // render width
+var RH = 200;   // render height
+
+// Osobny canvas w niskiej rozdzielczości
+var buf = document.createElement("canvas");
+buf.width = RW;
+buf.height = RH;
+var bctx = buf.getContext("2d", { alpha: false });
+var imgData = bctx.createImageData(RW, RH);
+var pixels = imgData.data;
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// ===== MAPA =====
+var map = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,0,0,1,0,1,1,1,0,1,1,0,1],
+  [1,0,1,0,0,0,0,0,1,0,0,0,0,1,0,1],
+  [1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,1],
+  [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
+  [1,0,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
+  [1,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1],
+  [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1],
+  [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1],
+  [1,1,1,1,1,0,1,1,1,0,1,1,1,1,0,1],
+  [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+  [1,0,1,1,1,0,1,0,1,1,1,1,1,0,1,1],
+  [1,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1],
+  [1,0,0,0,1,1,1,1,1,0,1,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+function isWall(x, y) {
+  var mx = Math.floor(x);
+  var my = Math.floor(y);
+  if (mx < 0 || mx >= 16 || my < 0 || my >= 16) return true;
+  return map[my][mx] === 1;
+}
+
+var player = {
+  x: 1.5, y: 1.5,
+  dirX: 1, dirY: 0,
+  planeX: 0, planeY: 0.66,
+  hp: 100, ammo: 50, score: 0
+};
+
+// ===== WROGOWIE =====
+var enemies = [];
+function spawnEnemies() {
+  enemies = [];
+  var spots = [[6,2],[3,7],[12,4],[8,10],[13,13],[5,13],[10,6],[2,11]];
+  for (var i = 0; i < spots.length; i++) {
+    enemies.push({ x: spots[i][0]+0.5, y: spots[i][1]+0.5, hp: 3, alive: true, hit: 0 });
+  }
+}
+spawnEnemies();
+
+function restart() {
+  player.x = 1.5; player.y = 1.5;
+  player.dirX = 1; player.dirY = 0;
+  player.planeX = 0; player.planeY = 0.66;
+  player.hp = 100; player.ammo = 50; player.score = 0;
+  spawnEnemies();
+}
+
+// ===== STRZAŁ =====
+var lastShot = 0;
+
+function shoot() {
+  if (player.ammo <= 0 || player.hp <= 0) return;
+  player.ammo--;
+  var dirAngle = Math.atan2(player.dirY, player.dirX);
+  for (var i = 0; i < enemies.length; i++) {
+    var e = enemies[i];
+    if (!e.alive) continue;
+    var dx = e.x - player.x;
+    var dy = e.y - player.y;
+    var dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > 15) continue;
+    var angle = Math.atan2(dy, dx) - dirAngle;
+    while (angle > Math.PI) angle -= Math.PI*2;
+    while (angle < -Math.PI) angle += Math.PI*2;
+    if (Math.abs(angle) < 0.25) {
+      e.hp--;
+      e.hit = 8;
+      if (e.hp <= 0) { e.alive = false; player.score += 100; }
+      break;
+    }
+  }
+}
+
+// ===== PAD =====
 var padIndex = null;
 
 function getPad() {
@@ -69,56 +155,432 @@ function getPad() {
   return null;
 }
 
-function isOn(gp, idx) {
+function padPressed(idx) {
+  var gp = getPad();
   if (!gp || !gp.buttons[idx]) return false;
   var b = gp.buttons[idx];
   return b.pressed === true || (typeof b.value === "number" && b.value > 0.5);
 }
 
-function update() {
-  var gp = getPad();
+var DPAD_UP = 12, DPAD_DOWN = 13, DPAD_LEFT = 14, DPAD_RIGHT = 15;
+var BTN_A = 0, BTN_B = 1;
+var BTN_L = 4, BTN_R = 5, BTN_ZL = 6, BTN_ZR = 7;
 
-  // Info o padzie
-  if (gp) {
-    document.getElementById("padInfo").textContent = "PAD: " + gp.id.substring(0, 30) + " | buttons: " + gp.buttons.length;
-  } else {
-    document.getElementById("padInfo").textContent = "PAD: BRAK - wciśnij przycisk na padzie";
-  }
-
-  // Sprawdź każdy D-Pad
-  var upOn = isOn(gp, 12);
-  var dnOn = isOn(gp, 13);
-  var lfOn = isOn(gp, 14);
-  var rtOn = isOn(gp, 15);
-
-  document.getElementById("up").className = "row" + (upOn ? " on" : "");
-  document.getElementById("down").className = "row" + (dnOn ? " on" : "");
-  document.getElementById("left").className = "row" + (lfOn ? " on" : "");
-  document.getElementById("right").className = "row" + (rtOn ? " on" : "");
-
-  document.getElementById("upV").textContent = upOn ? "1" : "0";
-  document.getElementById("dnV").textContent = dnOn ? "1" : "0";
-  document.getElementById("lfV").textContent = lfOn ? "1" : "0";
-  document.getElementById("rtV").textContent = rtOn ? "1" : "0";
-
-  // Ruch
-  var speed = 0.05;
-  if (upOn) {
-    playerX += dirX * speed;
-    playerY += dirY * speed;
-  }
-  if (dnOn) {
-    playerX -= dirX * speed;
-    playerY -= dirY * speed;
-  }
-
-  document.getElementById("px").textContent = playerX.toFixed(2);
-  document.getElementById("py").textContent = playerY.toFixed(2);
-
-  requestAnimationFrame(update);
+var DEAD = 0.18;
+function dz(v) {
+  if (Math.abs(v) < DEAD) return 0;
+  var s = v > 0 ? 1 : -1;
+  return s * ((Math.abs(v) - DEAD) / (1 - DEAD));
 }
 
-update();
+var lastMoveDir = "-";
+var lastLX = 0;
+
+function rotatePlayer(rot) {
+  var c = Math.cos(rot), s = Math.sin(rot);
+  var odx = player.dirX;
+  player.dirX = player.dirX * c - player.dirY * s;
+  player.dirY = odx * s + player.dirY * c;
+  var opx = player.planeX;
+  player.planeX = player.planeX * c - player.planeY * s;
+  player.planeY = opx * s + player.planeY * c;
+}
+
+function tryMove(mx, my) {
+  if (!isWall(player.x + mx, player.y)) player.x += mx;
+  if (!isWall(player.x, player.y + my)) player.y += my;
+}
+
+function updatePad() {
+  var gp = getPad();
+  if (!gp) return;
+
+  var speed = 0.06;
+  var rotSpeed = 0.05;
+
+  var mvx = 0, mvy = 0;
+  var dirNames = [];
+
+  if (padPressed(DPAD_UP))    { mvx += player.dirX; mvy += player.dirY; dirNames.push("UP"); }
+  if (padPressed(DPAD_DOWN))  { mvx -= player.dirX; mvy -= player.dirY; dirNames.push("DN"); }
+  if (padPressed(DPAD_LEFT))  { mvx += player.dirY; mvy -= player.dirX; dirNames.push("LF"); }
+  if (padPressed(DPAD_RIGHT)) { mvx -= player.dirY; mvy += player.dirX; dirNames.push("RT"); }
+
+  lastMoveDir = dirNames.length > 0 ? dirNames.join("+") : "-";
+
+  if (mvx !== 0 || mvy !== 0) {
+    var len = Math.sqrt(mvx*mvx + mvy*mvy);
+    mvx = mvx / len * speed;
+    mvy = mvy / len * speed;
+    tryMove(mvx, mvy);
+  }
+
+  var lx = dz(gp.axes[0] || 0);
+  lastLX = lx;
+  if (lx !== 0) rotatePlayer(lx * rotSpeed);
+
+  if (padPressed(BTN_ZR) || padPressed(BTN_ZL) || padPressed(BTN_R) || padPressed(BTN_L)) {
+    var now = Date.now();
+    if (now - lastShot > 180) { lastShot = now; shoot(); }
+  }
+
+  if ((padPressed(BTN_A) || padPressed(BTN_B)) && player.hp <= 0) restart();
+}
+
+// ===== KLAWIATURA =====
+var keys = {};
+window.addEventListener("keydown", function(e) {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.indexOf("Arrow") === 0) e.preventDefault();
+  if (e.key.toLowerCase() === "r") restart();
+});
+window.addEventListener("keyup", function(e) {
+  keys[e.key.toLowerCase()] = false;
+});
+
+function updateKeyboard() {
+  var speed = 0.06;
+  var rotSpeed = 0.05;
+
+  var mvx = 0, mvy = 0;
+  if (keys["arrowup"] || keys["w"])    { mvx += player.dirX; mvy += player.dirY; }
+  if (keys["arrowdown"] || keys["s"])  { mvx -= player.dirX; mvy -= player.dirY; }
+  if (keys["arrowleft"])  { mvx += player.dirY; mvy -= player.dirX; }
+  if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; }
+
+  if (mvx !== 0 || mvy !== 0) {
+    var len = Math.sqrt(mvx*mvx + mvy*mvy);
+    mvx = mvx / len * speed;
+    mvy = mvy / len * speed;
+    tryMove(mvx, mvy);
+  }
+
+  if (keys["q"]) rotatePlayer(-rotSpeed);
+  if (keys["e"]) rotatePlayer(rotSpeed);
+
+  if (keys[" "]) {
+    var now = Date.now();
+    if (now - lastShot > 180) { lastShot = now; shoot(); }
+  }
+}
+
+function updateEnemies() {
+  for (var i = 0; i < enemies.length; i++) {
+    var e = enemies[i];
+    if (!e.alive) continue;
+    if (e.hit > 0) e.hit--;
+    var dx = e.x - player.x;
+    var dy = e.y - player.y;
+    var d = Math.sqrt(dx*dx + dy*dy);
+    if (d < 0.8 && Math.random() < 0.02) {
+      player.hp--;
+      if (player.hp < 0) player.hp = 0;
+    }
+  }
+}
+
+// ===== Z-BUFFER (alokowany raz) =====
+var zBuffer = new Float32Array(RW);
+
+// ===== RENDER - PIXEL PO PIXELU DO IMAGEDATA =====
+function render() {
+  // 1. Niebo i podłoga - wypełnij piksele bezpośrednio
+  var halfH = RH / 2;
+
+  for (var y = 0; y < RH; y++) {
+    var t = y < halfH ? y / halfH : 0;
+    var r, g, b;
+    if (y < halfH) {
+      // Niebo: gradient od #1a0a0a do #4a1010
+      r = Math.floor(26 + 48 * t);
+      g = Math.floor(10 + 6 * t);
+      b = Math.floor(10 + 6 * t);
+    } else {
+      // Podłoga: gradient od #2a1510 do #0a0505
+      var tt = (y - halfH) / halfH;
+      r = Math.floor(42 - 32 * tt);
+      g = Math.floor(21 - 16 * tt);
+      b = Math.floor(16 - 11 * tt);
+    }
+    var rowStart = y * RW * 4;
+    for (var x = 0; x < RW; x++) {
+      var idx = rowStart + x * 4;
+      pixels[idx] = r;
+      pixels[idx+1] = g;
+      pixels[idx+2] = b;
+      pixels[idx+3] = 255;
+    }
+  }
+
+  // 2. Raycasting ścian
+  for (var x = 0; x < RW; x++) {
+    var cameraX = 2 * x / RW - 1;
+    var rayDirX = player.dirX + player.planeX * cameraX;
+    var rayDirY = player.dirY + player.planeY * cameraX;
+    var mapX = Math.floor(player.x);
+    var mapY = Math.floor(player.y);
+    var ddx = rayDirX === 0 ? 1e30 : Math.abs(1/rayDirX);
+    var ddy = rayDirY === 0 ? 1e30 : Math.abs(1/rayDirY);
+    var stepX, stepY, sdx, sdy;
+    if (rayDirX < 0) { stepX = -1; sdx = (player.x - mapX) * ddx; }
+    else { stepX = 1; sdx = (mapX + 1 - player.x) * ddx; }
+    if (rayDirY < 0) { stepY = -1; sdy = (player.y - mapY) * ddy; }
+    else { stepY = 1; sdy = (mapY + 1 - player.y) * ddy; }
+
+    var hit = 0, side = 0, it = 0;
+    while (hit === 0 && it < 64) {
+      if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; }
+      else { sdy += ddy; mapY += stepY; side = 1; }
+      if (mapY < 0 || mapY >= 16 || mapX < 0 || mapX >= 16) break;
+      if (map[mapY][mapX] === 1) hit = 1;
+      it++;
+    }
+
+    var pd;
+    if (side === 0) pd = (mapX - player.x + (1-stepX)/2) / (rayDirX || 0.001);
+    else pd = (mapY - player.y + (1-stepY)/2) / (rayDirY || 0.001);
+    if (!isFinite(pd) || pd < 0.05) pd = 0.05;
+    zBuffer[x] = pd;
+
+    var lh = Math.floor(RH / pd);
+    var ds = Math.floor(-lh/2 + RH/2);
+    var de = Math.floor(lh/2 + RH/2);
+    if (ds < 0) ds = 0;
+    if (de >= RH) de = RH - 1;
+
+    var sh = Math.max(0.2, 1 - pd / 12);
+    var r, g, b;
+    if (side === 1) {
+      r = Math.floor(80 * sh);
+      g = Math.floor(10 * sh);
+      b = Math.floor(10 * sh);
+    } else {
+      r = Math.floor(180 * sh);
+      g = Math.floor(30 * sh);
+      b = Math.floor(30 * sh);
+    }
+
+    // Wypełnij kolumnę
+    for (var y = ds; y <= de; y++) {
+      var idx = (y * RW + x) * 4;
+      pixels[idx] = r;
+      pixels[idx+1] = g;
+      pixels[idx+2] = b;
+      pixels[idx+3] = 255;
+    }
+  }
+
+  // 3. Sprite'y wrogów - zamiast piksel po pikselu, rysuj pasy
+  // Zbierz widocznych wrogów i posortuj
+  var visibles = [];
+  for (var i = 0; i < enemies.length; i++) {
+    var e = enemies[i];
+    if (!e.alive) continue;
+    var dx = e.x - player.x;
+    var dy = e.y - player.y;
+    visibles.push({ e: e, dx: dx, dy: dy, d2: dx*dx + dy*dy });
+  }
+  visibles.sort(function(a, b) { return b.d2 - a.d2; });
+
+  for (var i = 0; i < visibles.length; i++) {
+    var v = visibles[i];
+    var e = v.e;
+    var spriteX = v.dx;
+    var spriteY = v.dy;
+    var invDet = 1 / (player.planeX * player.dirY - player.dirX * player.planeY);
+    var transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
+    var transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
+    if (transformY <= 0.15) continue;
+
+    var spriteScreenX = Math.floor((RW / 2) * (1 + transformX / transformY));
+    var spriteH = Math.abs(Math.floor(RH / transformY));
+    var spriteW = Math.abs(Math.floor(RH / transformY));
+    var vMove = Math.floor(spriteH * 0.1);
+    var drawStartY = Math.floor(-spriteH / 2 + RH / 2 + vMove);
+    var drawEndY = Math.floor(spriteH / 2 + RH / 2 + vMove);
+    var drawStartX = Math.floor(-spriteW / 2 + spriteScreenX);
+    var drawEndX = Math.floor(spriteW / 2 + spriteScreenX);
+
+    if (drawEndX < 0 || drawStartX >= RW) continue;
+
+    for (var stripe = drawStartX; stripe < drawEndX; stripe++) {
+      if (stripe < 0 || stripe >= RW) continue;
+      if (transformY >= zBuffer[stripe]) continue;
+
+      var relX = (stripe - drawStartX) / spriteW;
+      var size = drawEndY - drawStartY;
+      if (size <= 0) continue;
+
+      // Określ kolor na podstawie relX
+      // Ciało: 0.2-0.8 x, głowa 0.3-0.7 x
+      var isEye = false;
+      var bodyColor = 0;
+      if (relX > 0.38 && relX < 0.46) isEye = true;
+      else if (relX > 0.54 && relX < 0.62) isEye = true;
+
+      var isHead = relX > 0.3 && relX < 0.7;
+      var isBody = relX > 0.2 && relX < 0.8;
+
+      // Wypełnij kolumnę sprite'a
+      for (var y = drawStartY; y < drawEndY; y++) {
+        if (y < 0 || y >= RH) continue;
+        var relY = (y - drawStartY) / size;
+
+        var r = -1, g = -1, b = -1;
+
+        // Oczy
+        if (isEye && relY > 0.22 && relY < 0.28) {
+          if (e.hit > 0) { r = 255; g = 255; b = 255; }
+          else { r = 255; g = 255; b = 0; }
+        }
+        // Głowa
+        else if (isHead && relY > 0.15 && relY < 0.35) {
+          if (e.hit > 0) { r = 255; g = 255; b = 255; }
+          else { r = 139; g = 0; b = 0; }
+        }
+        // Rogi (na wysokości 0.35-0.45)
+        else if (isBody && relY >= 0.35 && relY < 0.45) {
+          if (e.hit > 0) { r = 255; g = 255; b = 255; }
+          else { r = 139; g = 0; b = 0; }
+        }
+        // Tułów
+        else if (isBody && relY >= 0.45 && relY < 0.95) {
+          if (e.hit > 0) { r = 255; g = 255; b = 255; }
+          else { r = 92; g = 0; b = 0; }
+        }
+
+        if (r >= 0) {
+          var idx = (y * RW + stripe) * 4;
+          pixels[idx] = r;
+          pixels[idx+1] = g;
+          pixels[idx+2] = b;
+          pixels[idx+3] = 255;
+        }
+      }
+    }
+  }
+
+  // Wyślij bufor na canvas
+  bctx.putImageData(imgData, 0, 0);
+
+  // Skaluj na docelowy canvas
+  var cw = canvas.width;
+  var ch = canvas.height;
+
+  // Zachowaj proporcje 16:10 (320x200)
+  var targetRatio = RW / RH;
+  var screenRatio = cw / ch;
+  var drawW, drawH, drawX, drawY;
+  if (screenRatio > targetRatio) {
+    drawH = ch;
+    drawW = ch * targetRatio;
+    drawX = (cw - drawW) / 2;
+    drawY = 0;
+  } else {
+    drawW = cw;
+    drawH = cw / targetRatio;
+    drawX = 0;
+    drawY = (ch - drawH) / 2;
+  }
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(buf, 0, 0, RW, RH, drawX, drawY, drawW, drawH);
+
+  // HUD rysowany na normalnym canvasie (ostry tekst)
+  var scale = drawH / RH;
+  var hudY = drawY + 30 * scale;
+
+  ctx.fillStyle = "#e60012";
+  ctx.font = "bold " + Math.floor(20 * scale) + "px monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("HP: " + player.hp, drawX + 20 * scale, hudY);
+  ctx.textAlign = "center";
+  ctx.fillText("AMO: " + player.ammo, cw/2, hudY);
+  ctx.textAlign = "right";
+  ctx.fillText("SCORE: " + player.score, drawX + drawW - 20 * scale, hudY);
+
+  // Broń - prosty prostokąt na dole
+  var gunW = drawW * 0.12;
+  var gunH = drawH * 0.22;
+  var gunX = cw/2 - gunW/2;
+  var gunY = drawY + drawH - gunH;
+  ctx.fillStyle = "#333";
+  ctx.fillRect(gunX, gunY, gunW, gunH);
+  ctx.fillStyle = "#555";
+  ctx.fillRect(gunX + gunW*0.1, gunY - gunH*0.08, gunW*0.8, gunH*0.15);
+  ctx.fillStyle = "#222";
+  ctx.fillRect(gunX + gunW*0.4, gunY - gunH*0.05, gunW*0.2, gunH*0.85);
+  ctx.fillStyle = "#e60012";
+  ctx.fillRect(gunX + gunW*0.45, gunY - gunH*0.08, gunW*0.1, gunH*0.04);
+
+  // Celownik
+  ctx.strokeStyle = "#e60012";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cw/2 - 12, drawY + drawH/2 - 12, 24, 24);
+
+  // Ekran śmierci
+  if (player.hp <= 0) {
+    ctx.fillStyle = "rgba(150,0,0,0.75)";
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold " + Math.floor(64 * scale) + "px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("YOU DIED", cw/2, ch/2);
+    ctx.font = Math.floor(20 * scale) + "px monospace";
+    ctx.fillText("A / R = restart", cw/2, ch/2 + 50 * scale);
+  } else {
+    var allDead = enemies.length > 0;
+    for (var i = 0; i < enemies.length; i++) {
+      if (enemies[i].alive) { allDead = false; break; }
+    }
+    if (allDead) {
+      ctx.fillStyle = "rgba(0,100,0,0.5)";
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.fillStyle = "#0f0";
+      ctx.font = "bold " + Math.floor(56 * scale) + "px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("LEVEL CLEARED!", cw/2, ch/2);
+      ctx.font = Math.floor(20 * scale) + "px monospace";
+      ctx.fillStyle = "#fff";
+      ctx.fillText("A / R = restart", cw/2, ch/2 + 50 * scale);
+    }
+  }
+}
+
+// ===== PĘTLA =====
+var frames = 0;
+var fpsTime = Date.now();
+
+function tick() {
+  updatePad();
+  updateKeyboard();
+  updateEnemies();
+  render();
+
+  frames++;
+  var now = Date.now();
+  if (now - fpsTime > 1000) {
+    var gp = getPad();
+    var padTxt = gp ? "OK" : "BRAK";
+    log(
+      "FPS:" + frames + " PAD:" + padTxt +
+      "\nDIR:" + lastMoveDir +
+      "\nPOS: " + player.x.toFixed(2) + ", " + player.y.toFixed(2)
+    );
+    frames = 0;
+    fpsTime = now;
+  }
+}
+
+function loop() {
+  tick();
+  requestAnimationFrame(loop);
+}
+
+loop();
+log("Start.");
 </script>
 </body>
 </html>
