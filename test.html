@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Test D-Pad ruch</title>
+<style>
+  body {
+    background: #000;
+    color: #0f0;
+    font-family: monospace;
+    font-size: 28px;
+    padding: 30px;
+    margin: 0;
+  }
+  .row {
+    margin: 15px 0;
+    padding: 15px;
+    border: 2px solid #333;
+    border-radius: 8px;
+  }
+  .on {
+    background: #e60012;
+    color: #fff;
+    border-color: #ff4444;
+  }
+  .label { color: #888; font-size: 18px; }
+  .value { color: #0f0; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="row" id="padInfo">PAD: szukam...</div>
+
+<div class="row" id="up">
+  <span class="label">D-Pad UP (B12):</span> <span class="value" id="upV">0</span>
+</div>
+<div class="row" id="down">
+  <span class="label">D-Pad DOWN (B13):</span> <span class="value" id="dnV">0</span>
+</div>
+<div class="row" id="left">
+  <span class="label">D-Pad LEFT (B14):</span> <span class="value" id="lfV">0</span>
+</div>
+<div class="row" id="right">
+  <span class="label">D-Pad RIGHT (B15):</span> <span class="value" id="rtV">0</span>
+</div>
+
+<div class="row">
+  <span class="label">POZYCJA X:</span> <span class="value" id="px">2.50</span>
+</div>
+<div class="row">
+  <span class="label">POZYCJA Y:</span> <span class="value" id="py">2.50</span>
+</div>
+
+<script>
+var playerX = 2.5;
+var playerY = 2.5;
+var dirX = 1;
+var dirY = 0;
+
+var padIndex = null;
+
+function getPad() {
+  if (!navigator.getGamepads) return null;
+  var pads = navigator.getGamepads();
+  if (padIndex !== null && pads[padIndex]) return pads[padIndex];
+  for (var i = 0; i < pads.length; i++) {
+    if (pads[i]) { padIndex = i; return pads[i]; }
+  }
+  return null;
+}
+
+function isOn(gp, idx) {
+  if (!gp || !gp.buttons[idx]) return false;
+  var b = gp.buttons[idx];
+  return b.pressed === true || (typeof b.value === "number" && b.value > 0.5);
+}
+
+function update() {
+  var gp = getPad();
+
+  // Info o padzie
+  if (gp) {
+    document.getElementById("padInfo").textContent = "PAD: " + gp.id.substring(0, 30) + " | buttons: " + gp.buttons.length;
+  } else {
+    document.getElementById("padInfo").textContent = "PAD: BRAK - wciśnij przycisk na padzie";
+  }
+
+  // Sprawdź każdy D-Pad
+  var upOn = isOn(gp, 12);
+  var dnOn = isOn(gp, 13);
+  var lfOn = isOn(gp, 14);
+  var rtOn = isOn(gp, 15);
+
+  document.getElementById("up").className = "row" + (upOn ? " on" : "");
+  document.getElementById("down").className = "row" + (dnOn ? " on" : "");
+  document.getElementById("left").className = "row" + (lfOn ? " on" : "");
+  document.getElementById("right").className = "row" + (rtOn ? " on" : "");
+
+  document.getElementById("upV").textContent = upOn ? "1" : "0";
+  document.getElementById("dnV").textContent = dnOn ? "1" : "0";
+  document.getElementById("lfV").textContent = lfOn ? "1" : "0";
+  document.getElementById("rtV").textContent = rtOn ? "1" : "0";
+
+  // Ruch
+  var speed = 0.05;
+  if (upOn) {
+    playerX += dirX * speed;
+    playerY += dirY * speed;
+  }
+  if (dnOn) {
+    playerX -= dirX * speed;
+    playerY -= dirY * speed;
+  }
+
+  document.getElementById("px").textContent = playerX.toFixed(2);
+  document.getElementById("py").textContent = playerY.toFixed(2);
+
+  requestAnimationFrame(update);
+}
+
+update();
+</script>
+</body>
+</html>
