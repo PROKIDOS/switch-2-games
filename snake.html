@@ -1,45 +1,86 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Snake Switch 2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Snake – Switch 2 (D-Pad)</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
   body {
-    background:#0a0f1e; min-height:100vh;
+    background:#0a0f1e;
+    min-height:100vh;
     display:flex; justify-content:center; align-items:center;
-    font-family:system-ui,sans-serif; padding:10px;
+    font-family:system-ui, 'Segoe UI', sans-serif;
+    padding:10px;
+    touch-action: manipulation;
   }
   .wrap {
-    background:#1a1f2e; border-radius:20px; padding:16px;
-    box-shadow:0 10px 30px #000;
-    display:flex; flex-direction:column; align-items:center; gap:12px;
+    background:#1a1f2e;
+    border-radius:24px;
+    padding:18px;
+    box-shadow:0 15px 35px rgba(0,0,0,0.75), inset 0 0 0 1px #4a5a7a;
+    display:flex; flex-direction:column; align-items:center; gap:14px;
   }
   canvas {
     display:block;
-    width:min(80vw,80vh); height:min(80vw,80vh);
+    width:min(80vw, 80vh);
+    height:min(80vw, 80vh);
     max-width:480px; max-height:480px;
-    background:#0e121c; border-radius:14px;
-    box-shadow:0 0 0 2px #3f4e6b;
+    background:#0e121c;
+    border-radius:16px;
+    box-shadow:0 0 0 2px #3f4e6b, 0 10px 25px black;
     image-rendering:pixelated;
   }
   .hud {
     display:flex; justify-content:space-between; align-items:center;
-    width:100%; color:#b7d0ff; font-weight:700;
+    width:100%; color:#b7d0ff; font-weight:700; letter-spacing:0.4px;
   }
   .score {
-    background:#0b0f18; padding:8px 22px; border-radius:30px;
+    background:#0b0f18;
+    padding:8px 22px;
+    border-radius:30px;
     font-size:1.3rem;
+    box-shadow:inset 0 2px 6px #00000099, 0 3px 0 #0a0e14;
+    border-bottom:2px solid #3f5a8a;
   }
-  .status { font-size:1.1rem; color:#8fd3ff; }
+  .status {
+    background:#232b3b;
+    padding:8px 22px;
+    border-radius:30px;
+    font-size:1.1rem;
+    box-shadow:inset 0 0 8px #00000055;
+    border:1px solid #51678b;
+    transition:0.2s;
+    color:#8fd3ff;
+  }
+  .hint {
+    display:flex; gap:6px; color:#8a9fc0; font-size:0.85rem;
+    font-weight:400; text-transform:uppercase; opacity:0.85;
+  }
+  .hint span {
+    background:#1e2537; padding:4px 12px; border-radius:20px;
+    border:1px solid #3f5170;
+  }
   button {
-    background:#2f3b55; color:#deecff; font-weight:bold;
-    font-size:1rem; padding:10px 24px; border-radius:30px;
-    border:none; cursor:pointer; box-shadow:0 4px 0 #0f1420;
-    transition:0.05s;
+    background:#2f3b55;
+    color:#deecff;
+    font-weight:bold;
+    font-size:1rem;
+    padding:10px 26px;
+    border-radius:40px;
+    border:none;
+    box-shadow:0 5px 0 #0f1420, 0 5px 12px black;
+    cursor:pointer;
+    transition:0.05s linear;
+    letter-spacing:0.8px;
+    border-bottom:2px solid #6d8bc0;
+    touch-action: manipulation;
   }
-  button:active { transform:translateY(3px); box-shadow:0 1px 0 #0f1420; }
+  button:active {
+    transform:translateY(3px);
+    box-shadow:0 2px 0 #0f1420, 0 5px 12px black;
+  }
+  button:focus-visible { outline:3px solid #7aa2ff; }
 </style>
 </head>
 <body>
@@ -47,9 +88,12 @@
   <canvas id="cv" width="400" height="400"></canvas>
   <div class="hud">
     <div class="score">🍎 <span id="score">0</span></div>
-    <div class="status" id="status">GRAJ</div>
+    <div class="status" id="status">PLAYING</div>
   </div>
-  <button id="restart">↻ NOWA GRA</button>
+  <div class="hint">
+    <span>⬆</span><span>⬇</span><span>⬅</span><span>➡</span>
+  </div>
+  <button id="restart">↻ NEW GAME</button>
 </div>
 
 <script>
@@ -59,41 +103,45 @@
   const scoreEl = document.getElementById('score');
   const statusEl = document.getElementById('status');
 
-  const N = 20;                 // 20x20 pól
-  const CS = cv.width / N;      // rozmiar pola = 20px
+  const N = 20;                    // 20x20 grid
+  const CS = cv.width / N;         // cell size (20px)
+  const FPS = 60;
+  const MOVE_MS = 150;             // snake speed (lower = faster)
 
-  let snake, food, dir, nextDir, score, alive, interval;
+  let snake, food, dir, nextDir, score, alive, won;
+  let moveInterval = null;
 
-  function reset(){
-    clearInterval(interval);
+  // --- RESET ---
+  function reset() {
+    if (moveInterval) clearInterval(moveInterval);
     snake = [[10,10],[9,10],[8,10]];
     dir = 'RIGHT';
     nextDir = 'RIGHT';
     score = 0;
     alive = true;
+    won = false;
     scoreEl.textContent = 0;
-    statusEl.textContent = 'GRAJ';
+    statusEl.textContent = 'PLAYING';
     statusEl.style.color = '#8fd3ff';
     placeFood();
     draw();
-    interval = setInterval(tick, 180);
+    moveInterval = setInterval(tick, MOVE_MS);
   }
 
-  function placeFood(){
+  function placeFood() {
     let fx, fy, tries = 0;
     do {
-      fx = Math.floor(Math.random()*N);
-      fy = Math.floor(Math.random()*N);
+      fx = Math.floor(Math.random() * N);
+      fy = Math.floor(Math.random() * N);
       tries++;
-      if (tries > 500) break;
-    } while (snake.some(s => s[0]===fx && s[1]===fy));
+    } while (snake.some(s => s[0]===fx && s[1]===fy) && tries < 500);
     food = [fx, fy];
   }
 
-  function tick(){
+  function tick() {
     if (!alive) return;
 
-    // blokada zawracania
+    // block 180° turns
     if ((dir==='RIGHT' && nextDir!=='LEFT') ||
         (dir==='LEFT'  && nextDir!=='RIGHT') ||
         (dir==='UP'    && nextDir!=='DOWN') ||
@@ -108,12 +156,11 @@
     else if (dir==='UP') ny--;
     else if (dir==='DOWN') ny++;
 
-    // kolizja ze ścianą
+    // wall collision
     if (nx<0 || nx>=N || ny<0 || ny>=N) { gameOver(); return; }
 
-    // kolizja z ciałem (bez ogona, bo ogon się przesunie)
-    const hit = snake.slice(0, -1).some(s => s[0]===nx && s[1]===ny);
-    if (hit) { gameOver(); return; }
+    // self collision (excluding tail tip that moves away)
+    if (snake.slice(0, -1).some(s => s[0]===nx && s[1]===ny)) { gameOver(); return; }
 
     const ate = (nx===food[0] && ny===food[1]);
     snake.unshift([nx, ny]);
@@ -128,95 +175,112 @@
     draw();
   }
 
-  function gameOver(){
+  function gameOver() {
     alive = false;
-    clearInterval(interval);
-    statusEl.textContent = 'PRZEGRANA';
+    clearInterval(moveInterval);
+    moveInterval = null;
+    statusEl.textContent = 'GAME OVER';
     statusEl.style.color = '#ff8a8a';
     draw();
   }
 
-  function win(){
+  function win() {
     alive = false;
-    clearInterval(interval);
-    statusEl.textContent = 'WYGRANA!';
+    won = true;
+    clearInterval(moveInterval);
+    moveInterval = null;
+    statusEl.textContent = 'YOU WIN!';
     statusEl.style.color = '#ffd966';
     draw();
   }
 
-  function draw(){
-    // tło
+  function draw() {
     ctx.fillStyle = '#0e121c';
     ctx.fillRect(0, 0, cv.width, cv.height);
 
-    // siatka
+    // grid
     ctx.strokeStyle = '#1e2a3a';
     ctx.lineWidth = 0.5;
-    for (let i=0; i<=N; i++){
-      ctx.beginPath();
-      ctx.moveTo(i*CS, 0); ctx.lineTo(i*CS, cv.height);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(0, i*CS); ctx.lineTo(cv.width, i*CS);
-      ctx.stroke();
+    for (let i = 0; i <= N; i++) {
+      ctx.beginPath(); ctx.moveTo(i*CS, 0); ctx.lineTo(i*CS, cv.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i*CS); ctx.lineTo(cv.width, i*CS); ctx.stroke();
     }
 
-    // jedzenie
+    // food
     ctx.fillStyle = '#ffaa33';
     ctx.beginPath();
     ctx.arc(food[0]*CS + CS/2, food[1]*CS + CS/2, CS*0.38, 0, Math.PI*2);
     ctx.fill();
 
-    // wąż
-    for (let i=0; i<snake.length; i++){
+    // snake
+    for (let i = 0; i < snake.length; i++) {
       const [x, y] = snake[i];
-      ctx.fillStyle = (i===0) ? '#82e0aa' : `rgb(40, ${180 - i*2}, 70)`;
+      ctx.fillStyle = (i === 0) ? '#82e0aa' : `rgb(40, ${180 - Math.min(i*2,120)}, 70)`;
       ctx.fillRect(x*CS + 1, y*CS + 1, CS - 2, CS - 2);
     }
 
-    // nakładka końca gry
-    if (!alive){
+    // overlay
+    if (!alive) {
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(0, 0, cv.width, cv.height);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 24px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 26px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(statusEl.textContent, cv.width/2, cv.height/2);
+      if (won) {
+        ctx.fillStyle = '#ffd966';
+        ctx.fillText('YOU WIN!', cv.width/2, cv.height/2 - 18);
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Snake filled the board', cv.width/2, cv.height/2 + 22);
+      } else {
+        ctx.fillStyle = '#ff8a8a';
+        ctx.fillText('GAME OVER', cv.width/2, cv.height/2 - 18);
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Press ↻ NEW GAME', cv.width/2, cv.height/2 + 22);
+      }
     }
   }
 
-  // --- STEROWANIE ---
-  function setDir(d){
+  // --- INPUT ---
+  function setDir(d) {
     if (!alive) return;
     nextDir = d;
   }
 
-  // Klawiatura
+  // Keyboard (arrows + WASD)
   document.addEventListener('keydown', e => {
     const k = e.key;
-    if (k==='ArrowUp' || k==='w' || k==='W')    { e.preventDefault(); setDir('UP'); }
-    if (k==='ArrowDown' || k==='s' || k==='S')  { e.preventDefault(); setDir('DOWN'); }
-    if (k==='ArrowLeft' || k==='a' || k==='A')  { e.preventDefault(); setDir('LEFT'); }
-    if (k==='ArrowRight'|| k==='d' || k==='D')  { e.preventDefault(); setDir('RIGHT'); }
-    if (k===' ' && !alive) reset();
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','W','s','S','a','A','d','D',' '].includes(k)) {
+      e.preventDefault();
+    }
+    if (!alive && k === ' ') { reset(); return; }
+    if (k==='ArrowUp' || k==='w' || k==='W')   setDir('UP');
+    if (k==='ArrowDown' || k==='s' || k==='S') setDir('DOWN');
+    if (k==='ArrowLeft' || k==='a' || k==='A') setDir('LEFT');
+    if (k==='ArrowRight'|| k==='d' || k==='D') setDir('RIGHT');
   });
 
   // Gamepad (Switch 2 D-Pad)
-  function pollGamepad(){
+  let aWasPressed = false;
+  function pollGamepad() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (const p of pads){
+    for (const p of pads) {
       if (!p) continue;
-      // Standardowe mapowanie D-Pada: 12=góra, 13=dół, 14=lewo, 15=prawo
-      if (p.buttons[12] && p.buttons[12].pressed) setDir('UP');
-      if (p.buttons[13] && p.buttons[13].pressed) setDir('DOWN');
-      if (p.buttons[14] && p.buttons[14].pressed) setDir('LEFT');
-      if (p.buttons[15] && p.buttons[15].pressed) setDir('RIGHT');
-      // A (0) = restart po przegranej
-      if (p.buttons[0] && p.buttons[0].pressed && !alive) {
-        if (!window._aPressed) { window._aPressed = true; reset(); }
-      } else {
-        window._aPressed = false;
+      if (alive) {
+        if (p.buttons[12] && p.buttons[12].pressed) setDir('UP');
+        if (p.buttons[13] && p.buttons[13].pressed) setDir('DOWN');
+        if (p.buttons[14] && p.buttons[14].pressed) setDir('LEFT');
+        if (p.buttons[15] && p.buttons[15].pressed) setDir('RIGHT');
+      }
+      // A button = restart after game over
+      const aNow = p.buttons[0] && p.buttons[0].pressed;
+      if (aNow && !aWasPressed && !alive) {
+        aWasPressed = true;
+        reset();
+      } else if (!aNow) {
+        aWasPressed = false;
       }
     }
     requestAnimationFrame(pollGamepad);
@@ -224,8 +288,8 @@
   requestAnimationFrame(pollGamepad);
 
   document.getElementById('restart').addEventListener('click', reset);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
 
-  // start
   reset();
 })();
 </script>
