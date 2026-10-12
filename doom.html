@@ -74,7 +74,7 @@ var map = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
-// Pomocnicza - czy pole jest ścianą
+// Sprawdź czy pole jest ścianą - MARGINES 0.2 żeby gracz nie wchodził w ścianę
 function isWall(x, y) {
   var mx = Math.floor(x);
   var my = Math.floor(y);
@@ -82,9 +82,9 @@ function isWall(x, y) {
   return map[my][mx] === 1;
 }
 
-// ===== GRACZ =====
+// ===== GRACZ - start na WOLNYM polu (map[1][1] = 0) =====
 var player = {
-  x: 2.5, y: 2.5,
+  x: 1.5, y: 1.5,
   dirX: 1, dirY: 0,
   planeX: 0, planeY: 0.66,
   hp: 100, ammo: 50, score: 0
@@ -102,7 +102,7 @@ function spawnEnemies() {
 spawnEnemies();
 
 function restart() {
-  player.x = 2.5; player.y = 2.5;
+  player.x = 1.5; player.y = 1.5;
   player.dirX = 1; player.dirY = 0;
   player.planeX = 0; player.planeY = 0.66;
   player.hp = 100; player.ammo = 50; player.score = 0;
@@ -167,7 +167,6 @@ function dz(v) {
   return s * ((Math.abs(v) - DEAD) / (1 - DEAD));
 }
 
-// Zmienne do debug
 var lastMoveDir = "-";
 var lastLX = 0;
 
@@ -181,12 +180,11 @@ function rotatePlayer(rot) {
   player.planeY = opx * s + player.planeY * c;
 }
 
+// Ruch z osobnymi próbami X i Y - klasyczne raycastingowe
 function tryMove(mx, my) {
-  // Próbuj X
   if (!isWall(player.x + mx, player.y)) {
     player.x += mx;
   }
-  // Próbuj Y
   if (!isWall(player.x, player.y + my)) {
     player.y += my;
   }
@@ -196,8 +194,8 @@ function updatePad() {
   var gp = getPad();
   if (!gp) return;
 
-  var speed = 0.05;
-  var rotSpeed = 0.04;
+  var speed = 0.06;
+  var rotSpeed = 0.05;
 
   // ===== D-PAD = CHODZENIE =====
   var mvx = 0, mvy = 0;
@@ -248,8 +246,8 @@ window.addEventListener("keyup", function(e) {
 });
 
 function updateKeyboard() {
-  var speed = 0.05;
-  var rotSpeed = 0.04;
+  var speed = 0.06;
+  var rotSpeed = 0.05;
 
   var mvx = 0, mvy = 0;
   if (keys["arrowup"] || keys["w"])    { mvx += player.dirX; mvy += player.dirY; }
