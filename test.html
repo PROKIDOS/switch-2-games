@@ -2,14 +2,14 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>DOOM - Switch 2</title>
+<title>DOOM - Switch 2 (Fast)</title>
 <style>
   html, body { margin:0; padding:0; background:#000; width:100%; height:100%; overflow:hidden; font-family:monospace; }
   #game { display:block; width:100vw; height:100vh; background:#000; image-rendering:pixelated; }
   #debug {
-    position:fixed; top:5px; left:5px; color:#0f0; font-size:12px;
-    background:rgba(0,0,0,0.8); padding:6px 10px; white-space:pre;
-    pointer-events:none; border:1px solid #0f0; z-index:999;
+    position:fixed; top:2px; left:2px; color:#0f0; font-size:10px;
+    background:rgba(0,0,0,0.5); padding:2px 6px; white-space:pre;
+    pointer-events:none; z-index:999; opacity:0.5;
   }
 </style>
 </head>
@@ -25,7 +25,7 @@ var log = function(m){ debug.textContent = m; };
 var canvas = document.getElementById("game");
 var ctx = canvas.getContext("2d", { alpha: false });
 
-// ==== RENDER W 320x200 NA OSOBNYM CANVASIE - potem skalowanie ====
+// Render na małym canvasie, skalowany na ekran
 var RW = 320, RH = 200;
 var buf = document.createElement("canvas");
 buf.width = RW;
@@ -39,37 +39,55 @@ function resize() {
 resize();
 window.addEventListener("resize", resize);
 
-// ==== MAPA ====
+// ==== MAPA - każda wartość = inny KOLOR ściany (nie tekstura) ====
 var map = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
-  [1,0,1,1,0,0,1,0,1,1,1,0,1,1,0,1],
-  [1,0,1,0,0,0,0,0,1,0,0,0,0,1,0,1],
-  [1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,1],
-  [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
-  [1,0,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
-  [1,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1],
-  [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1],
+  [1,0,2,2,0,0,1,0,3,3,3,0,1,2,0,1],
+  [1,0,2,0,0,0,0,0,3,0,0,0,0,2,0,1],
+  [1,0,2,0,4,4,4,0,3,0,2,2,0,2,0,1],
+  [1,0,0,0,4,0,0,0,0,0,2,0,0,0,0,1],
+  [1,0,2,0,4,0,3,3,3,0,2,0,1,1,0,1],
+  [1,0,2,0,0,0,3,0,0,0,0,0,1,0,0,1],
+  [1,0,2,2,2,0,3,0,1,1,1,0,1,0,1,1],
   [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1],
   [1,1,1,1,1,0,1,1,1,0,1,1,1,1,0,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
-  [1,0,1,1,1,0,1,0,1,1,1,1,1,0,1,1],
-  [1,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1],
+  [1,0,4,4,4,0,1,0,2,2,3,3,3,0,1,1],
+  [1,0,4,0,0,0,0,0,2,0,0,0,3,0,0,1],
   [1,0,0,0,1,1,1,1,1,0,1,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// Kolory bazowe dla typów ścian (R, G, B)
+var wallColors = [
+  [0,0,0],
+  [180, 60, 40],     // typ 1 - cegła czerwona
+  [70, 130, 50],     // typ 2 - zielony kamień
+  [110, 110, 130],   // typ 3 - metal
+  [60, 90, 160]      // typ 4 - tech niebieski
 ];
 
 function isWall(x, y) {
   var mx = Math.floor(x), my = Math.floor(y);
   if (mx < 0 || mx >= 16 || my < 0 || my >= 16) return true;
-  return map[my][mx] === 1;
+  return map[my][mx] > 0;
+}
+function getWallType(x, y) {
+  var mx = Math.floor(x), my = Math.floor(y);
+  if (mx < 0 || mx >= 16 || my < 0 || my >= 16) return 1;
+  var v = map[my][mx];
+  if (v < 1) return 1;
+  if (v > 4) return 4;
+  return v;
 }
 
 var player = {
   x: 1.5, y: 1.5,
   dirX: 1, dirY: 0,
   planeX: 0, planeY: 0.66,
-  hp: 100, ammo: 50, score: 0
+  hp: 100, ammo: 50, score: 0,
+  bob: 0
 };
 
 var enemies = [];
@@ -77,7 +95,10 @@ function spawnEnemies() {
   enemies = [];
   var spots = [[6,2],[3,7],[12,4],[8,10],[13,13],[5,13],[10,6],[2,11]];
   for (var i = 0; i < spots.length; i++) {
-    enemies.push({ x: spots[i][0]+0.5, y: spots[i][1]+0.5, hp: 3, alive: true, hit: 0 });
+    enemies.push({
+      x: spots[i][0]+0.5, y: spots[i][1]+0.5,
+      hp: 3, alive: true, hit: 0
+    });
   }
 }
 spawnEnemies();
@@ -91,9 +112,11 @@ function restart() {
 }
 
 var lastShot = 0;
+var gunAnim = 0;
 function shoot() {
   if (player.ammo <= 0 || player.hp <= 0) return;
   player.ammo--;
+  gunAnim = 8;
   var da = Math.atan2(player.dirY, player.dirX);
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
@@ -149,20 +172,20 @@ function tryMove(mx, my) {
   if (!isWall(player.x + mx, player.y)) player.x += mx;
   if (!isWall(player.x, player.y + my)) player.y += my;
 }
-
 function updatePad() {
   var gp = getPad();
   if (!gp) return;
   var speed = 0.06, rotSpeed = 0.05;
-  var mvx = 0, mvy = 0;
-  if (padPressed(12)) { mvx += player.dirX; mvy += player.dirY; }
-  if (padPressed(13)) { mvx -= player.dirX; mvy -= player.dirY; }
-  if (padPressed(14)) { mvx += player.dirY; mvy -= player.dirX; }
-  if (padPressed(15)) { mvx -= player.dirY; mvy += player.dirX; }
+  var mvx = 0, mvy = 0, moving = false;
+  if (padPressed(12)) { mvx += player.dirX; mvy += player.dirY; moving = true; }
+  if (padPressed(13)) { mvx -= player.dirX; mvy -= player.dirY; moving = true; }
+  if (padPressed(14)) { mvx += player.dirY; mvy -= player.dirX; moving = true; }
+  if (padPressed(15)) { mvx -= player.dirY; mvy += player.dirX; moving = true; }
   if (mvx !== 0 || mvy !== 0) {
     var len = Math.sqrt(mvx*mvx + mvy*mvy);
     tryMove(mvx/len*speed, mvy/len*speed);
   }
+  if (moving) player.bob += 0.15;
   var lx = dz(gp.axes[0] || 0);
   if (lx !== 0) rotatePlayer(lx * rotSpeed);
   if (padPressed(7) || padPressed(6) || padPressed(5) || padPressed(4)) {
@@ -182,15 +205,16 @@ window.addEventListener("keyup", function(e) { keys[e.key.toLowerCase()] = false
 
 function updateKeyboard() {
   var speed = 0.06, rotSpeed = 0.05;
-  var mvx = 0, mvy = 0;
-  if (keys["arrowup"] || keys["w"]) { mvx += player.dirX; mvy += player.dirY; }
-  if (keys["arrowdown"] || keys["s"]) { mvx -= player.dirX; mvy -= player.dirY; }
-  if (keys["arrowleft"]) { mvx += player.dirY; mvy -= player.dirX; }
-  if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; }
+  var mvx = 0, mvy = 0, moving = false;
+  if (keys["arrowup"] || keys["w"]) { mvx += player.dirX; mvy += player.dirY; moving = true; }
+  if (keys["arrowdown"] || keys["s"]) { mvx -= player.dirX; mvy -= player.dirY; moving = true; }
+  if (keys["arrowleft"]) { mvx += player.dirY; mvy -= player.dirX; moving = true; }
+  if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; moving = true; }
   if (mvx !== 0 || mvy !== 0) {
     var len = Math.sqrt(mvx*mvx + mvy*mvy);
     tryMove(mvx/len*speed, mvy/len*speed);
   }
+  if (moving) player.bob += 0.15;
   if (keys["q"]) rotatePlayer(-rotSpeed);
   if (keys["e"]) rotatePlayer(rotSpeed);
   if (keys[" "]) {
@@ -211,21 +235,21 @@ function updateEnemies() {
       if (player.hp < 0) player.hp = 0;
     }
   }
+  if (gunAnim > 0) gunAnim--;
 }
 
-// ==== Z-BUFFER ====
 var zBuffer = new Float32Array(RW);
 
-// ==== RENDER - fillRect, bez putImageData ====
+// ==== RENDER - 1 fillRect per kolumna ściany ====
 function render() {
   // Niebo
-  bctx.fillStyle = "#3a1010";
+  bctx.fillStyle = "#1a0a0a";
   bctx.fillRect(0, 0, RW, RH/2);
   // Podłoga
   bctx.fillStyle = "#1a0a05";
   bctx.fillRect(0, RH/2, RW, RH/2);
 
-  // ===== ŚCIANY - jeden fillRect per kolumna =====
+  // Ściany - JEDEN fillRect per kolumna, kolor z cieniowaniem
   for (var x = 0; x < RW; x++) {
     var cameraX = 2 * x / RW - 1;
     var rdx = player.dirX + player.planeX * cameraX;
@@ -244,7 +268,7 @@ function render() {
       if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; }
       else { sdy += ddy; mapY += stepY; side = 1; }
       if (mapY < 0 || mapY >= 16 || mapX < 0 || mapX >= 16) break;
-      if (map[mapY][mapX] === 1) hit = 1;
+      if (map[mapY][mapX] > 0) hit = 1;
       it++;
     }
 
@@ -260,17 +284,22 @@ function render() {
     if (ds < 0) ds = 0;
     if (de >= RH) de = RH - 1;
 
+    var wallType = getWallType(mapX, mapY);
+    var col = wallColors[wallType];
+
     var sh = 1 - pd / 14;
     if (sh < 0.15) sh = 0.15;
-    var r, g, b;
-    if (side === 1) { r = (90 * sh) | 0; g = (15 * sh) | 0; b = (15 * sh) | 0; }
-    else { r = (180 * sh) | 0; g = (35 * sh) | 0; b = (35 * sh) | 0; }
+    if (side === 1) sh *= 0.7;
+
+    var r = (col[0] * sh) | 0;
+    var g = (col[1] * sh) | 0;
+    var b = (col[2] * sh) | 0;
 
     bctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
     bctx.fillRect(x, ds, 1, de - ds);
   }
 
-  // ===== WROGOWIE =====
+  // Wrogowie - pionowe pasy fillRect
   var vis = [];
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
@@ -291,7 +320,7 @@ function render() {
     var sX = ((RW/2) * (1 + tx/ty)) | 0;
     var sH = Math.abs((RH / ty) | 0);
     var sW = Math.abs((RH / ty) | 0);
-    var vMove = (sH * 0.1) | 0;
+    var vMove = (sH * 0.15) | 0;
     var dsY = (-sH/2 + RH/2 + vMove) | 0;
     var deY = (sH/2 + RH/2 + vMove) | 0;
     var dsX = (-sW/2 + sX) | 0;
@@ -303,47 +332,54 @@ function render() {
       if (st < 0 || st >= RW) continue;
       if (ty >= zBuffer[st]) continue;
       var relX = (st - dsX) / sW;
-
-      var isEye = (relX > 0.38 && relX < 0.46) || (relX > 0.54 && relX < 0.62);
-      var isHead = relX > 0.3 && relX < 0.7;
-      var isBody = relX > 0.2 && relX < 0.8;
-
       var size = deY - dsY;
       if (size <= 0) continue;
 
-      var yEye1 = dsY + size * 0.22;
-      var yEye2 = dsY + size * 0.28;
-      var yHead1 = dsY + size * 0.15;
-      var yHead2 = dsY + size * 0.35;
-      var yRog1 = dsY + size * 0.35;
-      var yBody2 = dsY + size * 0.95;
+      var isEye = (relX > 0.35 && relX < 0.44) || (relX > 0.56 && relX < 0.65);
+      var isHead = relX > 0.30 && relX < 0.70;
+      var isHorn = relX > 0.20 && relX < 0.80;
+      var isBody = relX > 0.15 && relX < 0.85;
+      var isArm = (relX > 0.05 && relX < 0.15) || (relX > 0.85 && relX < 0.95);
 
-      if (isEye && e.hit === 0) {
-        bctx.fillStyle = "#ff0";
-        bctx.fillRect(st, yEye1, 1, yEye2 - yEye1);
-      } else if (e.hit > 0) {
-        if (isHead) {
-          bctx.fillStyle = "#fff";
-          bctx.fillRect(st, yHead1, 1, yHead2 - yHead1);
+      var y1 = 0, y2 = 0, cr = 0, cg = 0, cb = 0;
+
+      if (isHorn && !isHead) {
+        y1 = dsY + size * 0.08;
+        y2 = dsY + size * 0.20;
+        cr = 60; cg = 30; cb = 20;
+      } else if (isHead) {
+        if (isEye) {
+          y1 = dsY + size * 0.22;
+          y2 = dsY + size * 0.30;
+          if (e.hit > 0) { cr = 255; cg = 255; cb = 255; }
+          else { cr = 255; cg = 255; cb = 0; }
+        } else {
+          y1 = dsY + size * 0.15;
+          y2 = dsY + size * 0.40;
+          cr = 90; cg = 40; cb = 30;
         }
-        if (isBody) {
-          bctx.fillStyle = "#fff";
-          bctx.fillRect(st, yRog1, 1, yBody2 - yRog1);
-        }
-      } else {
-        if (isHead) {
-          bctx.fillStyle = "#8b0000";
-          bctx.fillRect(st, yHead1, 1, yHead2 - yHead1);
-        }
-        if (isBody) {
-          bctx.fillStyle = "#5c0000";
-          bctx.fillRect(st, yRog1, 1, yBody2 - yRog1);
-        }
+      } else if (isArm) {
+        y1 = dsY + size * 0.45;
+        y2 = dsY + size * 0.75;
+        cr = 100; cg = 50; cb = 40;
+      } else if (isBody) {
+        y1 = dsY + size * 0.40;
+        y2 = dsY + size * 0.95;
+        cr = 80; cg = 30; cb = 25;
+      }
+
+      if (e.hit > 0 && !isEye) { cr = 255; cg = 255; cb = 255; }
+
+      if (y2 > y1) {
+        if (y1 < 0) y1 = 0;
+        if (y2 > RH) y2 = RH;
+        bctx.fillStyle = "rgb(" + cr + "," + cg + "," + cb + ")";
+        bctx.fillRect(st, y1, 1, y2 - y1);
       }
     }
   }
 
-  // ===== SKALUJ NA EKRAN =====
+  // ==== SKALUJ NA EKRAN ====
   var cw = canvas.width, ch = canvas.height;
   var targetRatio = RW / RH;
   var screenRatio = cw / ch;
@@ -361,44 +397,111 @@ function render() {
   ctx.fillRect(0, 0, cw, ch);
   ctx.drawImage(buf, 0, 0, RW, RH, dxx, dyy, dw, dh);
 
-  // ===== HUD na głównym canvasie (mniejszy) =====
   var scale = dh / RH;
+
+  // ==== BROŃ ====
+  var bobY = Math.sin(player.bob) * 3 * scale;
+  var gunRecoil = gunAnim * 4 * scale;
+  var gw = dw * 0.28;
+  var gh = dh * 0.30;
+  var gx = cw/2 - gw/2;
+  var gy = dyy + dh - gh + bobY + gunRecoil;
+
+  ctx.fillStyle = "#3a2a1a";
+  ctx.fillRect(gx + gw*0.35, gy + gh*0.2, gw*0.3, gh*0.8);
+  ctx.fillStyle = "#2a2a2a";
+  ctx.fillRect(gx + gw*0.42, gy - gh*0.1, gw*0.16, gh*0.5);
+  ctx.fillStyle = "#4a4a4a";
+  ctx.fillRect(gx + gw*0.44, gy - gh*0.1, gw*0.12, gh*0.1);
+  ctx.fillStyle = "#c89a7a";
+  ctx.fillRect(gx + gw*0.15, gy + gh*0.4, gw*0.2, gh*0.5);
+  ctx.fillRect(gx + gw*0.65, gy + gh*0.4, gw*0.2, gh*0.5);
+  if (gunAnim > 6) {
+    ctx.fillStyle = "rgba(255,200,50,0.8)";
+    ctx.fillRect(gx + gw*0.45, gy - gh*0.15, gw*0.1, gh*0.15);
+  }
+
+  // ==== HUD ====
+  var hudH = 40 * scale;
+  var hudY = dyy + dh - hudH;
+  ctx.fillStyle = "#5a5a4a";
+  ctx.fillRect(dxx, hudY, dw, hudH);
+  ctx.fillStyle = "#3a3a2a";
+  ctx.fillRect(dxx, hudY, dw, 2 * scale);
+
+  var secW = dw / 3;
+  ctx.fillStyle = "#000";
+  ctx.font = "bold " + ((14 * scale) | 0) + "px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("AMMO", dxx + secW * 0.5, hudY + hudH * 0.35);
+  ctx.fillStyle = "#f00";
+  ctx.font = "bold " + ((22 * scale) | 0) + "px monospace";
+  ctx.fillText("" + player.ammo, dxx + secW * 0.5, hudY + hudH * 0.85);
+
+  var faceCenterX = cw / 2;
+  var faceY = hudY + hudH * 0.15;
+  var faceH = hudH * 0.7;
+  var faceW = faceH;
+  ctx.fillStyle = "#c89a7a";
+  ctx.fillRect(faceCenterX - faceW/2, faceY, faceW, faceH);
+  ctx.fillStyle = "#fff";
+  var eyeSize = faceW * 0.18;
+  ctx.fillRect(faceCenterX - faceW*0.22, faceY + faceH*0.25, eyeSize, eyeSize);
+  ctx.fillRect(faceCenterX + faceW*0.04, faceY + faceH*0.25, eyeSize, eyeSize);
+  ctx.fillStyle = "#000";
+  var pupilOff = player.hp > 60 ? -1*scale : (player.hp > 30 ? 0 : 1*scale);
+  ctx.fillRect(faceCenterX - faceW*0.20 + pupilOff, faceY + faceH*0.30, eyeSize*0.5, eyeSize*0.5);
+  ctx.fillRect(faceCenterX + faceW*0.06 + pupilOff, faceY + faceH*0.30, eyeSize*0.5, eyeSize*0.5);
+  ctx.fillStyle = "#8a1a1a";
+  if (player.hp > 60) {
+    ctx.fillRect(faceCenterX - faceW*0.25, faceY + faceH*0.65, faceW*0.5, faceH*0.08);
+  } else if (player.hp > 30) {
+    ctx.fillRect(faceCenterX - faceW*0.20, faceY + faceH*0.68, faceW*0.4, faceH*0.08);
+  } else {
+    ctx.fillRect(faceCenterX - faceW*0.25, faceY + faceH*0.72, faceW*0.5, faceH*0.08);
+    ctx.fillRect(faceCenterX - faceW*0.15, faceY + faceH*0.65, faceW*0.3, faceH*0.06);
+  }
+  if (player.hp < 70) {
+    ctx.fillStyle = "#8a0000";
+    ctx.fillRect(faceCenterX - faceW*0.30, faceY + faceH*0.15, faceW*0.08, faceH*0.25);
+  }
+  if (player.hp < 40) {
+    ctx.fillStyle = "#8a0000";
+    ctx.fillRect(faceCenterX + faceW*0.25, faceY + faceH*0.10, faceW*0.10, faceH*0.30);
+    ctx.fillRect(faceCenterX - faceW*0.05, faceY + faceH*0.50, faceW*0.08, faceH*0.20);
+  }
+
+  ctx.fillStyle = "#000";
+  ctx.font = "bold " + ((14 * scale) | 0) + "px monospace";
+  ctx.fillText("HEALTH", dxx + dw - secW * 0.5, hudY + hudH * 0.35);
+  ctx.fillStyle = player.hp > 50 ? "#0f0" : (player.hp > 25 ? "#ff0" : "#f00");
+  ctx.font = "bold " + ((22 * scale) | 0) + "px monospace";
+  ctx.fillText("" + player.hp + "%", dxx + dw - secW * 0.5, hudY + hudH * 0.85);
+
   ctx.fillStyle = "#e60012";
   ctx.font = "bold " + ((10 * scale) | 0) + "px monospace";
-  ctx.textAlign = "left";
-  ctx.fillText("HP: " + player.hp, dxx + 10 * scale, dyy + 16 * scale);
-  ctx.textAlign = "center";
-  ctx.fillText("AMO: " + player.ammo, cw/2, dyy + 16 * scale);
   ctx.textAlign = "right";
-  ctx.fillText("SCORE: " + player.score, dxx + dw - 10 * scale, dyy + 16 * scale);
+  ctx.fillText("SCORE: " + player.score, dxx + dw - 8 * scale, dyy + 14 * scale);
 
-  // Broń
-  var gw = dw * 0.1, gh = dh * 0.22;
-  var gx = cw/2 - gw/2, gy = dyy + dh - gh;
-  ctx.fillStyle = "#333";
-  ctx.fillRect(gx, gy, gw, gh);
-  ctx.fillStyle = "#555";
-  ctx.fillRect(gx + gw*0.1, gy - gh*0.08, gw*0.8, gh*0.15);
-  ctx.fillStyle = "#222";
-  ctx.fillRect(gx + gw*0.4, gy - gh*0.05, gw*0.2, gh*0.85);
-  ctx.fillStyle = "#e60012";
-  ctx.fillRect(gx + gw*0.45, gy - gh*0.08, gw*0.1, gh*0.04);
-
-  // Celownik
   ctx.strokeStyle = "#e60012";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(cw/2 - 12, dyy + dh/2 - 12, 24, 24);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cw/2 - 8, dyy + dh/2);
+  ctx.lineTo(cw/2 + 8, dyy + dh/2);
+  ctx.moveTo(cw/2, dyy + dh/2 - 8);
+  ctx.lineTo(cw/2, dyy + dh/2 + 8);
+  ctx.stroke();
 
-  // Ekran śmierci
   if (player.hp <= 0) {
-    ctx.fillStyle = "rgba(150,0,0,0.75)";
+    ctx.fillStyle = "rgba(150,0,0,0.8)";
     ctx.fillRect(0, 0, cw, ch);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold " + ((64 * scale) | 0) + "px monospace";
+    ctx.fillStyle = "#f00";
+    ctx.font = "bold " + ((72 * scale) | 0) + "px monospace";
     ctx.textAlign = "center";
     ctx.fillText("YOU DIED", cw/2, ch/2);
+    ctx.fillStyle = "#fff";
     ctx.font = ((20 * scale) | 0) + "px monospace";
-    ctx.fillText("A / R = restart", cw/2, ch/2 + 50 * scale);
+    ctx.fillText("A / R = restart", cw/2, ch/2 + 60 * scale);
   } else {
     var allDead = enemies.length > 0;
     for (var i = 0; i < enemies.length; i++) {
@@ -408,40 +511,34 @@ function render() {
       ctx.fillStyle = "rgba(0,100,0,0.5)";
       ctx.fillRect(0, 0, cw, ch);
       ctx.fillStyle = "#0f0";
-      ctx.font = "bold " + ((56 * scale) | 0) + "px monospace";
+      ctx.font = "bold " + ((64 * scale) | 0) + "px monospace";
       ctx.textAlign = "center";
       ctx.fillText("LEVEL CLEARED!", cw/2, ch/2);
-      ctx.font = ((20 * scale) | 0) + "px monospace";
       ctx.fillStyle = "#fff";
-      ctx.fillText("A / R = restart", cw/2, ch/2 + 50 * scale);
+      ctx.font = ((22 * scale) | 0) + "px monospace";
+      ctx.fillText("WYNIK: " + player.score, cw/2, ch/2 + 50 * scale);
+      ctx.fillText("A / R = restart", cw/2, ch/2 + 90 * scale);
     }
   }
 }
 
-// ==== PĘTLA Z FPS LIMITEREM 30 ====
+// ==== PĘTLA ====
 var frames = 0, fpsTime = Date.now(), lastFps = 0;
-var targetFps = 30;
-var frameInterval = 1000 / targetFps;
-var lastFrameTime = 0;
 
 function tick() {
-  var now = Date.now();
-  var delta = now - lastFrameTime;
-  if (delta < frameInterval) return;
-  lastFrameTime = now - (delta % frameInterval);
-
   updatePad();
   updateKeyboard();
   updateEnemies();
   render();
 
   frames++;
+  var now = Date.now();
   if (now - fpsTime > 1000) {
     lastFps = frames;
     frames = 0;
     fpsTime = now;
     var gp = getPad();
-    log("FPS: " + lastFps + " / " + targetFps + " | PAD: " + (gp ? "OK" : "BRAK"));
+    log("FPS: " + lastFps + " | PAD: " + (gp ? "OK" : "BRAK"));
   }
 }
 
@@ -451,7 +548,7 @@ function loop() {
 }
 
 loop();
-log("Start. Cel: 30 FPS");
+log("Start.");
 </script>
 </body>
 </html>
