@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -300,7 +299,6 @@ function render() {
 
     if (deX < 0 || dsX >= RW || deY < 0 || dsY >= RH) continue;
 
-    // Rysuj sprite kolumnami
     for (var st = dsX; st < deX; st++) {
       if (st < 0 || st >= RW) continue;
       if (ty >= zBuffer[st]) continue;
@@ -310,25 +308,20 @@ function render() {
       var isHead = relX > 0.3 && relX < 0.7;
       var isBody = relX > 0.2 && relX < 0.8;
 
-      // Głowa + oczy + tułów - rysuj jako osobne fillRecty zamiast per-piksel
       var size = deY - dsY;
       if (size <= 0) continue;
 
-      // Podziel sprite na 4 poziomy: oczy, głowa, rogi, tułów
       var yEye1 = dsY + size * 0.22;
       var yEye2 = dsY + size * 0.28;
       var yHead1 = dsY + size * 0.15;
       var yHead2 = dsY + size * 0.35;
       var yRog1 = dsY + size * 0.35;
-      var yRog2 = dsY + size * 0.45;
-      var yBody1 = dsY + size * 0.45;
       var yBody2 = dsY + size * 0.95;
 
       if (isEye && e.hit === 0) {
         bctx.fillStyle = "#ff0";
         bctx.fillRect(st, yEye1, 1, yEye2 - yEye1);
       } else if (e.hit > 0) {
-        // Biały gdy trafiony
         if (isHead) {
           bctx.fillStyle = "#fff";
           bctx.fillRect(st, yHead1, 1, yHead2 - yHead1);
@@ -368,16 +361,16 @@ function render() {
   ctx.fillRect(0, 0, cw, ch);
   ctx.drawImage(buf, 0, 0, RW, RH, dxx, dyy, dw, dh);
 
-  // ===== HUD na głównym canvasie (ostry tekst) =====
+  // ===== HUD na głównym canvasie (mniejszy) =====
   var scale = dh / RH;
   ctx.fillStyle = "#e60012";
-  ctx.font = "bold " + ((16 * scale) | 0) + "px monospace";
+  ctx.font = "bold " + ((10 * scale) | 0) + "px monospace";
   ctx.textAlign = "left";
-  ctx.fillText("HP: " + player.hp, dxx + 15 * scale, dyy + 25 * scale);
+  ctx.fillText("HP: " + player.hp, dxx + 10 * scale, dyy + 16 * scale);
   ctx.textAlign = "center";
-  ctx.fillText("AMO: " + player.ammo, cw/2, dyy + 25 * scale);
+  ctx.fillText("AMO: " + player.ammo, cw/2, dyy + 16 * scale);
   ctx.textAlign = "right";
-  ctx.fillText("SCORE: " + player.score, dxx + dw - 15 * scale, dyy + 25 * scale);
+  ctx.fillText("SCORE: " + player.score, dxx + dw - 10 * scale, dyy + 16 * scale);
 
   // Broń
   var gw = dw * 0.1, gh = dh * 0.22;
@@ -434,7 +427,7 @@ var lastFrameTime = 0;
 function tick() {
   var now = Date.now();
   var delta = now - lastFrameTime;
-  if (delta < frameInterval) return; // jeszcze nie czas
+  if (delta < frameInterval) return;
   lastFrameTime = now - (delta % frameInterval);
 
   updatePad();
