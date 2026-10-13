@@ -2,33 +2,14 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>DOOM - Switch 2</title>
+<title>DOOM - Switch 2 Edition</title>
 <style>
-  html, body {
-    margin: 0; padding: 0;
-    background: #000;
-    width: 100%; height: 100%;
-    overflow: hidden;
-    font-family: monospace;
-  }
-  #game {
-    display: block;
-    width: 100vw;
-    height: 100vh;
-    background: #000;
-    image-rendering: pixelated;
-  }
+  html, body { margin:0; padding:0; background:#000; width:100%; height:100%; overflow:hidden; font-family:monospace; }
+  #game { display:block; width:100vw; height:100vh; background:#000; image-rendering:pixelated; }
   #debug {
-    position: fixed;
-    top: 5px; left: 5px;
-    color: #0f0;
-    font-size: 13px;
-    z-index: 999;
-    background: rgba(0,0,0,0.8);
-    padding: 6px 10px;
-    white-space: pre;
-    pointer-events: none;
-    border: 1px solid #0f0;
+    position:fixed; top:2px; left:2px; color:#0f0; font-size:10px;
+    background:rgba(0,0,0,0.5); padding:2px 6px; white-space:pre;
+    pointer-events:none; z-index:999; opacity:0.4;
   }
 </style>
 </head>
@@ -39,10 +20,17 @@
 <script>
 "use strict";
 var debug = document.getElementById("debug");
-var log = function(m) { debug.textContent = m; };
+var log = function(m){ debug.textContent = m; };
 
 var canvas = document.getElementById("game");
-var ctx = canvas.getContext("2d");
+var ctx = canvas.getContext("2d", { alpha: false });
+
+// ==== ROZDZIELCZOŚĆ RENDERU ====
+var RW = 320, RH = 200;
+var buf = document.createElement("canvas");
+buf.width = RW;
+buf.height = RH;
+var bctx = buf.getContext("2d", { alpha: false });
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -51,52 +39,147 @@ function resize() {
 resize();
 window.addEventListener("resize", resize);
 
-var W = canvas.width;
-var H = canvas.height;
+// ==== TEKSTURY - generowane proceduralnie ====
+// Każda tekstura to 64x64 pikseli w tablicy RGB
 
-// ===== MAPA =====
+function makeBrickTexture() {
+  var t = new Uint8Array(64 * 64 * 3);
+  for (var y = 0; y < 64; y++) {
+    for (var x = 0; x < 64; x++) {
+      var i = (y * 64 + x) * 3;
+      var row = Math.floor(y / 8);
+      var offset = (row % 2) * 8;
+      var xx = (x + offset) % 16;
+      var yy = y % 8;
+      // Zaprawa
+      if (xx < 2 || yy < 1) {
+        t[i] = 40; t[i+1] = 25; t[i+2] = 20;
+      } else {
+        // Cegła
+        var noise = ((x * 13 + y * 7) % 20) - 10;
+        t[i] = Math.max(0, Math.min(255, 120 + noise));
+        t[i+1] = Math.max(0, Math.min(255, 55 + noise));
+        t[i+2] = Math.max(0, Math.min(255, 40 + noise));
+      }
+    }
+  }
+  return t;
+}
+
+function makeStoneTexture() {
+  var t = new Uint8Array(64 * 64 * 3);
+  for (var y = 0; y < 64; y++) {
+    for (var x = 0; x < 64; x++) {
+      var i = (y * 64 + x) * 3;
+      var noise = ((x * 11 + y * 17) % 40) - 20;
+      var n2 = ((x * 3 + y * 5) % 15) - 7;
+      // Zielonkawy kamień
+      t[i] = Math.max(0, Math.min(255, 60 + noise + n2));
+      t[i+1] = Math.max(0, Math.min(255, 70 + noise));
+      t[i+2] = Math.max(0, Math.min(255, 40 + noise));
+    }
+  }
+  return t;
+}
+
+function makeMetalTexture() {
+  var t = new Uint8Array(64 * 64 * 3);
+  for (var y = 0; y < 64; y++) {
+    for (var x = 0; x < 64; x++) {
+      var i = (y * 64 + x) * 3;
+      var noise = ((x * 7 + y * 13) % 30) - 15;
+      // Panele metalowe
+      var px = x % 16;
+      var py = y % 16;
+      var isEdge = px === 0 || px === 15 || py === 0 || py === 15;
+      var isRivet = (px === 3 || px === 12) && (py === 3 || py === 12);
+      if (isEdge) {
+        t[i] = 30 + noise; t[i+1] = 30 + noise; t[i+2] = 35 + noise;
+      } else if (isRivet) {
+        t[i] = 200; t[i+1] = 200; t[i+2] = 180;
+      } else {
+        t[i] = Math.max(0, Math.min(255, 80 + noise));
+        t[i+1] = Math.max(0, Math.min(255, 85 + noise));
+        t[i+2] = Math.max(0, Math.min(255, 95 + noise));
+      }
+    }
+  }
+  return t;
+}
+
+function makeTechTexture() {
+  var t = new Uint8Array(64 * 64 * 3);
+  for (var y = 0; y < 64; y++) {
+    for (var x = 0; x < 64; x++) {
+      var i = (y * 64 + x) * 3;
+      var noise = ((x * 5 + y * 3) % 25) - 12;
+      // Ciemny metal z zielonymi akcentami
+      var isStripe = (x % 32 > 14 && x % 32 < 18);
+      var isHorizontal = (y % 32 > 28 && y % 32 < 32);
+      if (isStripe || isHorizontal) {
+        t[i] = 40 + noise; t[i+1] = 180 + noise; t[i+2] = 40 + noise;
+      } else {
+        t[i] = Math.max(0, Math.min(255, 50 + noise));
+        t[i+1] = Math.max(0, Math.min(255, 55 + noise));
+        t[i+2] = Math.max(0, Math.min(255, 60 + noise));
+      }
+    }
+  }
+  return t;
+}
+
+var textures = [makeBrickTexture(), makeStoneTexture(), makeMetalTexture(), makeTechTexture()];
+
+// ==== MAPA - wartości 1-4 oznaczają tekstury ====
 var map = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
-  [1,0,1,1,0,0,1,0,1,1,1,0,1,1,0,1],
-  [1,0,1,0,0,0,0,0,1,0,0,0,0,1,0,1],
-  [1,0,1,0,1,1,1,0,1,0,1,1,0,1,0,1],
-  [1,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
-  [1,0,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
-  [1,0,1,0,0,0,1,0,0,0,0,0,1,0,0,1],
-  [1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1],
+  [1,0,2,2,0,0,1,0,3,3,3,0,1,2,0,1],
+  [1,0,2,0,0,0,0,0,3,0,0,0,0,2,0,1],
+  [1,0,2,0,4,4,4,0,3,0,2,2,0,2,0,1],
+  [1,0,0,0,4,0,0,0,0,0,2,0,0,0,0,1],
+  [1,0,2,0,4,0,3,3,3,0,2,0,1,1,0,1],
+  [1,0,2,0,0,0,3,0,0,0,0,0,1,0,0,1],
+  [1,0,2,2,2,0,3,0,1,1,1,0,1,0,1,1],
   [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1],
   [1,1,1,1,1,0,1,1,1,0,1,1,1,1,0,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
-  [1,0,1,1,1,0,1,0,1,1,1,1,1,0,1,1],
-  [1,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1],
+  [1,0,4,4,4,0,1,0,2,2,3,3,3,0,1,1],
+  [1,0,4,0,0,0,0,0,2,0,0,0,3,0,0,1],
   [1,0,0,0,1,1,1,1,1,0,1,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
 ];
 
-// Sprawdź czy pole jest ścianą - MARGINES 0.2 żeby gracz nie wchodził w ścianę
 function isWall(x, y) {
-  var mx = Math.floor(x);
-  var my = Math.floor(y);
+  var mx = Math.floor(x), my = Math.floor(y);
   if (mx < 0 || mx >= 16 || my < 0 || my >= 16) return true;
-  return map[my][mx] === 1;
+  return map[my][mx] > 0;
 }
 
-// ===== GRACZ - start na WOLNYM polu (map[1][1] = 0) =====
+function getWallType(x, y) {
+  var mx = Math.floor(x), my = Math.floor(y);
+  if (mx < 0 || mx >= 16 || my < 0 || my >= 16) return 1;
+  return map[my][mx];
+}
+
 var player = {
   x: 1.5, y: 1.5,
   dirX: 1, dirY: 0,
   planeX: 0, planeY: 0.66,
-  hp: 100, ammo: 50, score: 0
+  hp: 100, ammo: 50, score: 0,
+  bob: 0
 };
 
-// ===== WROGOWIE =====
+// ==== WROGOWIE ====
 var enemies = [];
 function spawnEnemies() {
   enemies = [];
   var spots = [[6,2],[3,7],[12,4],[8,10],[13,13],[5,13],[10,6],[2,11]];
   for (var i = 0; i < spots.length; i++) {
-    enemies.push({ x: spots[i][0]+0.5, y: spots[i][1]+0.5, hp: 3, alive: true, hit: 0 });
+    enemies.push({
+      x: spots[i][0]+0.5, y: spots[i][1]+0.5,
+      hp: 3, alive: true, hit: 0, anim: 0
+    });
   }
 }
 spawnEnemies();
@@ -109,24 +192,23 @@ function restart() {
   spawnEnemies();
 }
 
-// ===== STRZAŁ =====
 var lastShot = 0;
-
+var gunAnim = 0;
 function shoot() {
   if (player.ammo <= 0 || player.hp <= 0) return;
   player.ammo--;
-  var dirAngle = Math.atan2(player.dirY, player.dirX);
+  gunAnim = 8;
+  var da = Math.atan2(player.dirY, player.dirX);
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
     if (!e.alive) continue;
-    var dx = e.x - player.x;
-    var dy = e.y - player.y;
-    var dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist > 15) continue;
-    var angle = Math.atan2(dy, dx) - dirAngle;
-    while (angle > Math.PI) angle -= Math.PI*2;
-    while (angle < -Math.PI) angle += Math.PI*2;
-    if (Math.abs(angle) < 0.25) {
+    var dx = e.x - player.x, dy = e.y - player.y;
+    var d = Math.sqrt(dx*dx + dy*dy);
+    if (d > 15) continue;
+    var a = Math.atan2(dy, dx) - da;
+    while (a > Math.PI) a -= Math.PI*2;
+    while (a < -Math.PI) a += Math.PI*2;
+    if (Math.abs(a) < 0.25) {
       e.hp--;
       e.hit = 8;
       if (e.hp <= 0) { e.alive = false; player.score += 100; }
@@ -135,9 +217,8 @@ function shoot() {
   }
 }
 
-// ===== PAD =====
+// ==== PAD ====
 var padIndex = null;
-
 function getPad() {
   if (!navigator.getGamepads) return null;
   var pads = navigator.getGamepads();
@@ -147,29 +228,18 @@ function getPad() {
   }
   return null;
 }
-
 function padPressed(idx) {
   var gp = getPad();
   if (!gp || !gp.buttons[idx]) return false;
   var b = gp.buttons[idx];
   return b.pressed === true || (typeof b.value === "number" && b.value > 0.5);
 }
-
-// D-Pad
-var DPAD_UP = 12, DPAD_DOWN = 13, DPAD_LEFT = 14, DPAD_RIGHT = 15;
-var BTN_A = 0, BTN_B = 1;
-var BTN_L = 4, BTN_R = 5, BTN_ZL = 6, BTN_ZR = 7;
-
 var DEAD = 0.18;
 function dz(v) {
   if (Math.abs(v) < DEAD) return 0;
   var s = v > 0 ? 1 : -1;
   return s * ((Math.abs(v) - DEAD) / (1 - DEAD));
 }
-
-var lastMoveDir = "-";
-var lastLX = 0;
-
 function rotatePlayer(rot) {
   var c = Math.cos(rot), s = Math.sin(rot);
   var odx = player.dirX;
@@ -179,270 +249,453 @@ function rotatePlayer(rot) {
   player.planeX = player.planeX * c - player.planeY * s;
   player.planeY = opx * s + player.planeY * c;
 }
-
-// Ruch z osobnymi próbami X i Y - klasyczne raycastingowe
 function tryMove(mx, my) {
-  if (!isWall(player.x + mx, player.y)) {
-    player.x += mx;
-  }
-  if (!isWall(player.x, player.y + my)) {
-    player.y += my;
-  }
+  if (!isWall(player.x + mx, player.y)) player.x += mx;
+  if (!isWall(player.x, player.y + my)) player.y += my;
 }
 
 function updatePad() {
   var gp = getPad();
   if (!gp) return;
-
-  var speed = 0.06;
-  var rotSpeed = 0.05;
-
-  // ===== D-PAD = CHODZENIE =====
+  var speed = 0.06, rotSpeed = 0.05;
   var mvx = 0, mvy = 0;
-  var dirNames = [];
-
-  if (padPressed(DPAD_UP))    { mvx += player.dirX; mvy += player.dirY; dirNames.push("UP"); }
-  if (padPressed(DPAD_DOWN))  { mvx -= player.dirX; mvy -= player.dirY; dirNames.push("DN"); }
-  if (padPressed(DPAD_LEFT))  { mvx += player.dirY; mvy -= player.dirX; dirNames.push("LF"); }
-  if (padPressed(DPAD_RIGHT)) { mvx -= player.dirY; mvy += player.dirX; dirNames.push("RT"); }
-
-  lastMoveDir = dirNames.length > 0 ? dirNames.join("+") : "-";
-
+  var moving = false;
+  if (padPressed(12)) { mvx += player.dirX; mvy += player.dirY; moving = true; }
+  if (padPressed(13)) { mvx -= player.dirX; mvy -= player.dirY; moving = true; }
+  if (padPressed(14)) { mvx += player.dirY; mvy -= player.dirX; moving = true; }
+  if (padPressed(15)) { mvx -= player.dirY; mvy += player.dirX; moving = true; }
   if (mvx !== 0 || mvy !== 0) {
     var len = Math.sqrt(mvx*mvx + mvy*mvy);
-    mvx = mvx / len * speed;
-    mvy = mvy / len * speed;
-    tryMove(mvx, mvy);
+    tryMove(mvx/len*speed, mvy/len*speed);
   }
-
-  // ===== LEWY DRĄŻEK = OBRÓT =====
+  if (moving) player.bob += 0.15;
   var lx = dz(gp.axes[0] || 0);
-  lastLX = lx;
-  if (lx !== 0) {
-    rotatePlayer(lx * rotSpeed);
-  }
-
-  // ===== STRZAŁ =====
-  if (padPressed(BTN_ZR) || padPressed(BTN_ZL) || padPressed(BTN_R) || padPressed(BTN_L)) {
+  if (lx !== 0) rotatePlayer(lx * rotSpeed);
+  if (padPressed(7) || padPressed(6) || padPressed(5) || padPressed(4)) {
     var now = Date.now();
     if (now - lastShot > 180) { lastShot = now; shoot(); }
   }
-
-  // ===== RESTART =====
-  if ((padPressed(BTN_A) || padPressed(BTN_B)) && player.hp <= 0) {
-    restart();
-  }
 }
 
-// ===== KLAWIATURA =====
+// ==== KLAWIATURA ====
 var keys = {};
 window.addEventListener("keydown", function(e) {
   keys[e.key.toLowerCase()] = true;
   if (e.key.indexOf("Arrow") === 0) e.preventDefault();
   if (e.key.toLowerCase() === "r") restart();
 });
-window.addEventListener("keyup", function(e) {
-  keys[e.key.toLowerCase()] = false;
-});
+window.addEventListener("keyup", function(e) { keys[e.key.toLowerCase()] = false; });
 
 function updateKeyboard() {
-  var speed = 0.06;
-  var rotSpeed = 0.05;
-
-  var mvx = 0, mvy = 0;
-  if (keys["arrowup"] || keys["w"])    { mvx += player.dirX; mvy += player.dirY; }
-  if (keys["arrowdown"] || keys["s"])  { mvx -= player.dirX; mvy -= player.dirY; }
-  if (keys["arrowleft"])  { mvx += player.dirY; mvy -= player.dirX; }
-  if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; }
-
+  var speed = 0.06, rotSpeed = 0.05;
+  var mvx = 0, mvy = 0, moving = false;
+  if (keys["arrowup"] || keys["w"]) { mvx += player.dirX; mvy += player.dirY; moving = true; }
+  if (keys["arrowdown"] || keys["s"]) { mvx -= player.dirX; mvy -= player.dirY; moving = true; }
+  if (keys["arrowleft"]) { mvx += player.dirY; mvy -= player.dirX; moving = true; }
+  if (keys["arrowright"]) { mvx -= player.dirY; mvy += player.dirX; moving = true; }
   if (mvx !== 0 || mvy !== 0) {
     var len = Math.sqrt(mvx*mvx + mvy*mvy);
-    mvx = mvx / len * speed;
-    mvy = mvy / len * speed;
-    tryMove(mvx, mvy);
+    tryMove(mvx/len*speed, mvy/len*speed);
   }
-
+  if (moving) player.bob += 0.15;
   if (keys["q"]) rotatePlayer(-rotSpeed);
   if (keys["e"]) rotatePlayer(rotSpeed);
-
   if (keys[" "]) {
     var now = Date.now();
     if (now - lastShot > 180) { lastShot = now; shoot(); }
   }
 }
 
-// ===== UPDATE WROGÓW =====
 function updateEnemies() {
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
     if (!e.alive) continue;
     if (e.hit > 0) e.hit--;
-    var dx = e.x - player.x;
-    var dy = e.y - player.y;
+    e.anim += 0.1;
+    var dx = e.x - player.x, dy = e.y - player.y;
     var d = Math.sqrt(dx*dx + dy*dy);
     if (d < 0.8 && Math.random() < 0.02) {
       player.hp--;
       if (player.hp < 0) player.hp = 0;
     }
   }
+  if (gunAnim > 0) gunAnim--;
 }
 
-// ===== RENDER =====
+// ==== Z-BUFFER ====
+var zBuffer = new Float32Array(RW);
+
+// ==== RENDER ====
 function render() {
-  W = canvas.width;
-  H = canvas.height;
+  // ===== SUFIT - gradient =====
+  var ceilGrad = bctx.createLinearGradient(0, 0, 0, RH/2);
+  ceilGrad.addColorStop(0, "#0a0505");
+  ceilGrad.addColorStop(1, "#2a1510");
+  bctx.fillStyle = ceilGrad;
+  bctx.fillRect(0, 0, RW, RH/2);
 
-  var sky = ctx.createLinearGradient(0, 0, 0, H/2);
-  sky.addColorStop(0, "#1a0a0a");
-  sky.addColorStop(1, "#4a1010");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, H/2);
+  // ===== PODŁOGA - gradient =====
+  var floorGrad = bctx.createLinearGradient(0, RH/2, 0, RH);
+  floorGrad.addColorStop(0, "#1a0a05");
+  floorGrad.addColorStop(1, "#0a0505");
+  bctx.fillStyle = floorGrad;
+  bctx.fillRect(0, RH/2, RW, RH/2);
 
-  var floor = ctx.createLinearGradient(0, H/2, 0, H);
-  floor.addColorStop(0, "#2a1510");
-  floor.addColorStop(1, "#0a0505");
-  ctx.fillStyle = floor;
-  ctx.fillRect(0, H/2, W, H/2);
-
-  var zBuffer = new Array(W);
-  for (var i = 0; i < W; i++) zBuffer[i] = 1e30;
-
-  for (var x = 0; x < W; x++) {
-    var cameraX = 2 * x / W - 1;
-    var rayDirX = player.dirX + player.planeX * cameraX;
-    var rayDirY = player.dirY + player.planeY * cameraX;
-    var mapX = Math.floor(player.x);
-    var mapY = Math.floor(player.y);
-    var ddx = rayDirX === 0 ? 1e30 : Math.abs(1/rayDirX);
-    var ddy = rayDirY === 0 ? 1e30 : Math.abs(1/rayDirY);
+  // ===== ŚCIANY Z TEKSTURAMI =====
+  for (var x = 0; x < RW; x++) {
+    var cameraX = 2 * x / RW - 1;
+    var rdx = player.dirX + player.planeX * cameraX;
+    var rdy = player.dirY + player.planeY * cameraX;
+    var mapX = Math.floor(player.x), mapY = Math.floor(player.y);
+    var ddx = rdx === 0 ? 1e30 : Math.abs(1/rdx);
+    var ddy = rdy === 0 ? 1e30 : Math.abs(1/rdy);
     var stepX, stepY, sdx, sdy;
-    if (rayDirX < 0) { stepX = -1; sdx = (player.x - mapX) * ddx; }
+    if (rdx < 0) { stepX = -1; sdx = (player.x - mapX) * ddx; }
     else { stepX = 1; sdx = (mapX + 1 - player.x) * ddx; }
-    if (rayDirY < 0) { stepY = -1; sdy = (player.y - mapY) * ddy; }
+    if (rdy < 0) { stepY = -1; sdy = (player.y - mapY) * ddy; }
     else { stepY = 1; sdy = (mapY + 1 - player.y) * ddy; }
 
     var hit = 0, side = 0, it = 0;
     while (hit === 0 && it < 64) {
       if (sdx < sdy) { sdx += ddx; mapX += stepX; side = 0; }
       else { sdy += ddy; mapY += stepY; side = 1; }
-      if (mapY < 0 || mapY > 15 || mapX < 0 || mapX > 15) break;
-      if (map[mapY][mapX] === 1) hit = 1;
+      if (mapY < 0 || mapY >= 16 || mapX < 0 || mapX >= 16) break;
+      if (map[mapY][mapX] > 0) hit = 1;
       it++;
     }
 
     var pd;
-    if (side === 0) pd = (mapX - player.x + (1-stepX)/2) / (rayDirX || 0.001);
-    else pd = (mapY - player.y + (1-stepY)/2) / (rayDirY || 0.001);
+    if (side === 0) pd = (mapX - player.x + (1-stepX)/2) / (rdx || 0.001);
+    else pd = (mapY - player.y + (1-stepY)/2) / (rdy || 0.001);
     if (!isFinite(pd) || pd < 0.05) pd = 0.05;
     zBuffer[x] = pd;
 
-    var lh = Math.floor(H / pd);
-    var ds = Math.floor(-lh/2 + H/2);
-    var de = Math.floor(lh/2 + H/2);
+    var lh = (RH / pd) | 0;
+    var ds = (-lh/2 + RH/2) | 0;
+    var de = (lh/2 + RH/2) | 0;
     if (ds < 0) ds = 0;
-    if (de > H) de = H;
+    if (de >= RH) de = RH - 1;
 
-    var sh = Math.max(0.2, 1 - pd / 12);
-    var col;
-    if (side === 1) col = "rgb(" + Math.floor(80*sh) + ",10,10)";
-    else col = "rgb(" + Math.floor(180*sh) + ",30,30)";
-    ctx.fillStyle = col;
-    ctx.fillRect(x, ds, 1, de - ds);
+    // Wybierz teksturę
+    var wallType = getWallType(mapX, mapY);
+    if (wallType < 1) wallType = 1;
+    if (wallType > 4) wallType = 1;
+    var tex = textures[wallType - 1];
+
+    // Współrzędna X tekstury
+    var wallX;
+    if (side === 0) wallX = player.y + pd * rdy;
+    else wallX = player.x + pd * rdx;
+    wallX -= Math.floor(wallX);
+
+    var texX = (wallX * 64) | 0;
+    if (side === 0 && rdx > 0) texX = 63 - texX;
+    if (side === 1 && rdy < 0) texX = 63 - texX;
+
+    // Cieniowanie
+    var sh = 1 - pd / 14;
+    if (sh < 0.15) sh = 0.15;
+    if (side === 1) sh *= 0.7;
+
+    // Rysuj każdą kolumnę ściany piksel po pikselu (z teksturą)
+    var step = 64 / lh;
+    var texPos = (ds - RH/2 + lh/2) * step;
+
+    for (var y = ds; y <= de; y++) {
+      var texY = (texPos | 0) & 63;
+      texPos += step;
+      var ti = (texY * 64 + texX) * 3;
+      var r = (tex[ti] * sh) | 0;
+      var g = (tex[ti+1] * sh) | 0;
+      var b = (tex[ti+2] * sh) | 0;
+      bctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+      bctx.fillRect(x, y, 1, 1);
+    }
   }
 
-  var list = [];
+  // ===== WROGOWIE - RĘCZNIE RYSOWANE SPRITE'Y =====
+  var vis = [];
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
     if (!e.alive) continue;
-    var dx = e.x - player.x;
-    var dy = e.y - player.y;
-    list.push({ e: e, d: dx*dx + dy*dy });
+    var dx = e.x - player.x, dy = e.y - player.y;
+    vis.push({ e: e, dx: dx, dy: dy, d2: dx*dx + dy*dy });
   }
-  list.sort(function(a, b) { return b.d - a.d; });
+  vis.sort(function(a, b) { return b.d2 - a.d2; });
 
-  for (var i = 0; i < list.length; i++) {
-    var e = list[i].e;
-    var spriteX = e.x - player.x;
-    var spriteY = e.y - player.y;
-    var invDet = 1 / (player.planeX * player.dirY - player.dirX * player.planeY);
-    var transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
-    var transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
-    if (transformY <= 0.1) continue;
+  var invDet = 1 / (player.planeX * player.dirY - player.dirX * player.planeY);
+  for (var i = 0; i < vis.length; i++) {
+    var v = vis[i];
+    var e = v.e;
+    var tx = invDet * (player.dirY * v.dx - player.dirX * v.dy);
+    var ty = invDet * (-player.planeY * v.dx + player.planeX * v.dy);
+    if (ty <= 0.15) continue;
 
-    var spriteScreenX = Math.floor((W / 2) * (1 + transformX / transformY));
-    var spriteH = Math.abs(Math.floor(H / transformY));
-    var spriteW = Math.abs(Math.floor(H / transformY));
-    var vMove = Math.floor(spriteH * 0.1);
-    var drawStartY = Math.floor(-spriteH / 2 + H / 2 + vMove);
-    var drawEndY = Math.floor(spriteH / 2 + H / 2 + vMove);
-    var drawStartX = Math.floor(-spriteW / 2 + spriteScreenX);
-    var drawEndX = Math.floor(spriteW / 2 + spriteScreenX);
+    var sX = ((RW/2) * (1 + tx/ty)) | 0;
+    var sH = Math.abs((RH / ty) | 0);
+    var sW = Math.abs((RH / ty) | 0);
+    var vMove = (sH * 0.15) | 0;
+    var dsY = (-sH/2 + RH/2 + vMove) | 0;
+    var deY = (sH/2 + RH/2 + vMove) | 0;
+    var dsX = (-sW/2 + sX) | 0;
+    var deX = (sW/2 + sX) | 0;
 
-    for (var stripe = drawStartX; stripe < drawEndX; stripe++) {
-      if (stripe < 0 || stripe >= W) continue;
-      if (transformY >= zBuffer[stripe]) continue;
-      var relX = (stripe - drawStartX) / spriteW;
-      var size = drawEndY - drawStartY;
-      for (var y = drawStartY; y < drawEndY; y++) {
-        if (y < 0 || y >= H) continue;
-        var relY = (y - drawStartY) / size;
-        var isBody = false;
-        if (relY > 0.15 && relY < 0.95 && relX > 0.15 && relX < 0.85) {
-          if (relY < 0.35) { if (relX > 0.3 && relX < 0.7) isBody = true; }
-          else if (relY < 0.45) { if (relX > 0.2 && relX < 0.8) isBody = true; }
-          else { if (relX > 0.2 && relX < 0.8) isBody = true; }
+    if (deX < 0 || dsX >= RW || deY < 0 || dsY >= RH) continue;
+
+    // Rysuj kolumnami - sprite demona
+    for (var st = dsX; st < deX; st++) {
+      if (st < 0 || st >= RW) continue;
+      if (ty >= zBuffer[st]) continue;
+
+      var relX = (st - dsX) / sW;
+      var size = deY - dsY;
+      if (size <= 0) continue;
+
+      // Kształt demona:
+      // Głowa: 0.30-0.70 (góra), zwężona u góry
+      // Rogi: 0.20-0.80 na wysokości 0.10-0.20
+      // Tułów: 0.15-0.85 na wysokości 0.40-0.95
+      // Ręce: 0.05-0.15 i 0.85-0.95 na wysokości 0.45-0.70
+
+      // Oczy
+      var eyeL = (relX > 0.35 && relX < 0.44);
+      var eyeR = (relX > 0.56 && relX < 0.65);
+      var isEye = eyeL || eyeR;
+
+      var isHead = relX > 0.30 && relX < 0.70;
+      var isHorn = relX > 0.20 && relX < 0.80;
+      var isBody = relX > 0.15 && relX < 0.85;
+      var isArm = relX > 0.05 && relX < 0.15 || relX > 0.85 && relX < 0.95;
+
+      var r = -1, g = -1, b = -1;
+
+      // Rogi (góra)
+      if (isHorn && !isHead) {
+        var yTop = dsY + size * 0.08;
+        var yBot = dsY + size * 0.20;
+        // Rogi tylko na skrajach
+        if ((relX < 0.30 || relX > 0.70)) {
+          r = 60; g = 30; b = 20;
         }
-        if (relY > 0.22 && relY < 0.28 &&
-            ((relX > 0.38 && relX < 0.46) || (relX > 0.54 && relX < 0.62))) {
-          ctx.fillStyle = e.hit > 0 ? "#fff" : "#ff0";
-          ctx.fillRect(stripe, y, 1, 1);
-          continue;
+      }
+
+      // Głowa
+      if (isHead) {
+        var yH1 = dsY + size * 0.15;
+        var yH2 = dsY + size * 0.40;
+        // Oczy
+        if (isEye) {
+          if (e.hit > 0) { r = 255; g = 255; b = 255; }
+          else { r = 255; g = 255; b = 0; }
+          var yEye1 = dsY + size * 0.22;
+          var yEye2 = dsY + size * 0.30;
+          // Rysuj tylko na wysokości oczu
+          if (r >= 0) {
+            bctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+            bctx.fillRect(st, yEye1, 1, yEye2 - yEye1);
+          }
+          r = -1;
+        } else {
+          // Skóra głowy
+          r = 90; g = 40; b = 30;
         }
-        if (isBody) {
-          if (e.hit > 0) ctx.fillStyle = "#fff";
-          else if (relY < 0.35) ctx.fillStyle = "#8b0000";
-          else ctx.fillStyle = "#5c0000";
-          ctx.fillRect(stripe, y, 1, 1);
+      }
+
+      // Tułów
+      if (isBody && !isHead) {
+        r = 80; g = 30; b = 25;
+      }
+
+      // Ręce
+      if (isArm) {
+        r = 100; g = 50; b = 40;
+      }
+
+      // Gdy trafiony - wszystko białe
+      if (e.hit > 0 && r >= 0) {
+        r = 255; g = 255; b = 255;
+      }
+
+      // Rysuj piksele pionowo
+      if (r >= 0 && !isEye) {
+        var yStart, yEnd;
+        if (isHead) {
+          yStart = dsY + size * 0.15;
+          yEnd = dsY + size * 0.40;
+        } else if (isBody) {
+          yStart = dsY + size * 0.40;
+          yEnd = dsY + size * 0.95;
+        } else if (isArm) {
+          yStart = dsY + size * 0.45;
+          yEnd = dsY + size * 0.75;
+        } else {
+          // Rogi
+          yStart = dsY + size * 0.08;
+          yEnd = dsY + size * 0.20;
         }
+        if (yStart < 0) yStart = 0;
+        if (yEnd > RH) yEnd = RH;
+        bctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+        bctx.fillRect(st, yStart, 1, yEnd - yStart);
       }
     }
   }
 
-  var gunW = Math.floor(W * 0.12);
-  var gunH = Math.floor(H * 0.25);
-  var gunX = Math.floor(W/2 - gunW/2);
-  var gunY = H - gunH;
-  ctx.fillStyle = "#333";
-  ctx.fillRect(gunX, gunY, gunW, gunH);
-  ctx.fillStyle = "#555";
-  ctx.fillRect(gunX + 8, gunY - 10, gunW - 16, 15);
-  ctx.fillStyle = "#222";
-  ctx.fillRect(gunX + gunW/2 - 8, gunY - 5, 16, gunH - 20);
-  ctx.fillStyle = "#e60012";
-  ctx.fillRect(gunX + gunW/2 - 3, gunY - 8, 6, 4);
+  // ===== SKALUJ NA EKRAN =====
+  var cw = canvas.width, ch = canvas.height;
+  var targetRatio = RW / RH;
+  var screenRatio = cw / ch;
+  var dw, dh, dxx, dyy;
+  if (screenRatio > targetRatio) {
+    dh = ch; dw = ch * targetRatio;
+    dxx = (cw - dw) / 2; dyy = 0;
+  } else {
+    dw = cw; dh = cw / targetRatio;
+    dxx = 0; dyy = (ch - dh) / 2;
+  }
 
-  ctx.fillStyle = "#e60012";
-  ctx.font = "bold 18px monospace";
-  ctx.textAlign = "left";
-  ctx.fillText("HP: " + player.hp, 20, 30);
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(buf, 0, 0, RW, RH, dxx, dyy, dw, dh);
+
+  var scale = dh / RH;
+
+  // ===== BROŃ - animowana =====
+  var bobY = Math.sin(player.bob) * 3 * scale;
+  var gunRecoil = gunAnim * 4 * scale;
+
+  var gw = dw * 0.28;
+  var gh = dh * 0.30;
+  var gx = cw/2 - gw/2;
+  var gy = dyy + dh - gh + bobY + gunRecoil;
+
+  // Korpus strzelby
+  ctx.fillStyle = "#3a2a1a";
+  ctx.fillRect(gx + gw*0.35, gy + gh*0.2, gw*0.3, gh*0.8);
+  // Lufa
+  ctx.fillStyle = "#2a2a2a";
+  ctx.fillRect(gx + gw*0.42, gy - gh*0.1, gw*0.16, gh*0.5);
+  // Lufa świecąca
+  ctx.fillStyle = "#4a4a4a";
+  ctx.fillRect(gx + gw*0.44, gy - gh*0.1, gw*0.12, gh*0.1);
+  // Ręce
+  ctx.fillStyle = "#c89a7a";
+  ctx.fillRect(gx + gw*0.15, gy + gh*0.4, gw*0.2, gh*0.5);
+  ctx.fillRect(gx + gw*0.65, gy + gh*0.4, gw*0.2, gh*0.5);
+  // Metalowy błysk
+  if (gunAnim > 6) {
+    ctx.fillStyle = "rgba(255,200,50,0.8)";
+    ctx.fillRect(gx + gw*0.45, gy - gh*0.15, gw*0.1, gh*0.15);
+  }
+
+  // ===== HUD W STYLU DOOM =====
+  var hudH = 40 * scale;
+  var hudY = dyy + dh - hudH;
+
+  // Pasek HUD
+  ctx.fillStyle = "#5a5a4a";
+  ctx.fillRect(dxx, hudY, dw, hudH);
+  ctx.fillStyle = "#3a3a2a";
+  ctx.fillRect(dxx, hudY, dw, 2 * scale);
+  ctx.fillRect(dxx, dyy + dh - 2 * scale, dw, 2 * scale);
+
+  // Lewa sekcja - AMMO
+  var secW = dw / 3;
+  ctx.fillStyle = "#000";
+  ctx.font = "bold " + ((14 * scale) | 0) + "px monospace";
   ctx.textAlign = "center";
-  ctx.fillText("AMO: " + player.ammo, W/2, 30);
+  ctx.fillText("AMMO", dxx + secW * 0.5, hudY + hudH * 0.35);
+  ctx.fillStyle = "#f00";
+  ctx.font = "bold " + ((22 * scale) | 0) + "px monospace";
+  ctx.fillText("" + player.ammo, dxx + secW * 0.5, hudY + hudH * 0.85);
+
+  // Środkowa sekcja - TWARZ
+  var faceCenterX = cw / 2;
+  var faceY = hudY + hudH * 0.15;
+  var faceH = hudH * 0.7;
+  var faceW = faceH;
+
+  // Twarz - tło
+  ctx.fillStyle = "#c89a7a";
+  ctx.fillRect(faceCenterX - faceW/2, faceY, faceW, faceH);
+
+  // Oczy
+  ctx.fillStyle = "#fff";
+  var eyeSize = faceW * 0.18;
+  ctx.fillRect(faceCenterX - faceW*0.22, faceY + faceH*0.25, eyeSize, eyeSize);
+  ctx.fillRect(faceCenterX + faceW*0.04, faceY + faceH*0.25, eyeSize, eyeSize);
+
+  // Źrenice (patrzą na boki zależnie od hp)
+  ctx.fillStyle = "#000";
+  var pupilOff = 0;
+  if (player.hp > 60) pupilOff = -1 * scale;
+  else if (player.hp > 30) pupilOff = 0;
+  else pupilOff = 1 * scale;
+  ctx.fillRect(faceCenterX - faceW*0.20 + pupilOff, faceY + faceH*0.30, eyeSize*0.5, eyeSize*0.5);
+  ctx.fillRect(faceCenterX + faceW*0.06 + pupilOff, faceY + faceH*0.30, eyeSize*0.5, eyeSize*0.5);
+
+  // Usta - zależne od HP
+  ctx.fillStyle = "#8a1a1a";
+  if (player.hp > 60) {
+    // Uśmiech
+    ctx.fillRect(faceCenterX - faceW*0.25, faceY + faceH*0.65, faceW*0.5, faceH*0.08);
+  } else if (player.hp > 30) {
+    // Prosto
+    ctx.fillRect(faceCenterX - faceW*0.20, faceY + faceH*0.68, faceW*0.4, faceH*0.08);
+  } else {
+    // Grymas
+    ctx.fillRect(faceCenterX - faceW*0.25, faceY + faceH*0.72, faceW*0.5, faceH*0.08);
+   ctx.fillRect(faceCenterX - faceW*0.15, faceY + faceH*0.65, faceW*0.3, faceH*0.06);
+  }
+
+  // Krew na twarzy gdy ranny
+  if (player.hp < 70) {
+    ctx.fillStyle = "#8a0000";
+    ctx.fillRect(faceCenterX - faceW*0.30, faceY + faceH*0.15, faceW*0.08, faceH*0.25);
+  }
+  if (player.hp < 40) {
+    ctx.fillStyle = "#8a0000";
+    ctx.fillRect(faceCenterX + faceW*0.25, faceY + faceH*0.10, faceW*0.10, faceH*0.30);
+    ctx.fillRect(faceCenterX - faceW*0.05, faceY + faceH*0.50, faceW*0.08, faceH*0.20);
+  }
+
+  // Prawa sekcja - HEALTH
+  ctx.fillStyle = "#000";
+  ctx.font = "bold " + ((14 * scale) | 0) + "px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("HEALTH", dxx + dw - secW * 0.5, hudY + hudH * 0.35);
+  ctx.fillStyle = player.hp > 50 ? "#0f0" : (player.hp > 25 ? "#ff0" : "#f00");
+  ctx.font = "bold " + ((22 * scale) | 0) + "px monospace";
+  ctx.fillText("" + player.hp + "%", dxx + dw - secW * 0.5, hudY + hudH * 0.85);
+
+  // SCORE na górze
+  ctx.fillStyle = "#e60012";
+  ctx.font = "bold " + ((10 * scale) | 0) + "px monospace";
   ctx.textAlign = "right";
-  ctx.fillText("SCORE: " + player.score, W - 20, 30);
+  ctx.fillText("SCORE: " + player.score, dxx + dw - 8 * scale, dyy + 14 * scale);
 
+  // ===== CELOWNIK =====
   ctx.strokeStyle = "#e60012";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(W/2 - 12, H/2 - 12, 24, 24);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cw/2 - 8, dyy + dh/2);
+  ctx.lineTo(cw/2 + 8, dyy + dh/2);
+  ctx.moveTo(cw/2, dyy + dh/2 - 8);
+  ctx.lineTo(cw/2, dyy + dh/2 + 8);
+  ctx.stroke();
 
+  // ===== EKRAN ŚMIERCI =====
   if (player.hp <= 0) {
-    ctx.fillStyle = "rgba(150,0,0,0.75)";
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 64px monospace";
+    ctx.fillStyle = "rgba(150,0,0,0.8)";
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = "#f00";
+    ctx.font = "bold " + ((72 * scale) | 0) + "px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("YOU DIED", W/2, H/2);
-    ctx.font = "20px monospace";
-    ctx.fillText("A / R = restart", W/2, H/2 + 50);
+    ctx.fillText("YOU DIED", cw/2, ch/2);
+    ctx.fillStyle = "#fff";
+    ctx.font = ((20 * scale) | 0) + "px monospace";
+    ctx.fillText("A / R = restart", cw/2, ch/2 + 60 * scale);
   } else {
     var allDead = enemies.length > 0;
     for (var i = 0; i < enemies.length; i++) {
@@ -450,41 +703,43 @@ function render() {
     }
     if (allDead) {
       ctx.fillStyle = "rgba(0,100,0,0.5)";
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, cw, ch);
       ctx.fillStyle = "#0f0";
-      ctx.font = "bold 56px monospace";
+      ctx.font = "bold " + ((64 * scale) | 0) + "px monospace";
       ctx.textAlign = "center";
-      ctx.fillText("LEVEL CLEARED!", W/2, H/2);
-      ctx.font = "20px monospace";
+      ctx.fillText("LEVEL CLEARED!", cw/2, ch/2);
       ctx.fillStyle = "#fff";
-      ctx.fillText("A / R = restart", W/2, H/2 + 50);
+      ctx.font = ((22 * scale) | 0) + "px monospace";
+      ctx.fillText("WYNIK: " + player.score, cw/2, ch/2 + 50 * scale);
+      ctx.fillText("A / R = restart", cw/2, ch/2 + 90 * scale);
     }
   }
 }
 
-// ===== PĘTLA =====
-var frames = 0;
-var fpsTime = Date.now();
+// ==== PĘTLA ====
+var frames = 0, fpsTime = Date.now(), lastFps = 0;
+var targetFps = 30;
+var frameInterval = 1000 / targetFps;
+var lastFrameTime = 0;
 
 function tick() {
+  var now = Date.now();
+  var delta = now - lastFrameTime;
+  if (delta < frameInterval) return;
+  lastFrameTime = now - (delta % frameInterval);
+
   updatePad();
   updateKeyboard();
   updateEnemies();
   render();
 
   frames++;
-  var now = Date.now();
   if (now - fpsTime > 1000) {
-    var gp = getPad();
-    var padTxt = gp ? "OK" : "BRAK";
-    log(
-      "FPS:" + frames + " PAD:" + padTxt +
-      "\nDIR:" + lastMoveDir +
-      "\nPOS: " + player.x.toFixed(2) + ", " + player.y.toFixed(2) +
-      "\nLX:" + lastLX.toFixed(2)
-    );
+    lastFps = frames;
     frames = 0;
     fpsTime = now;
+    var gp = getPad();
+    log("FPS: " + lastFps + "/" + targetFps + " | PAD: " + (gp ? "OK" : "BRAK"));
   }
 }
 
@@ -494,7 +749,7 @@ function loop() {
 }
 
 loop();
-log("Start.");
+log("Start. Cel: 30 FPS");
 </script>
 </body>
 </html>
