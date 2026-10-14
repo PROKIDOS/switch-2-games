@@ -709,4 +709,185 @@ function drawGoomba(e){
 }
 
 function drawPlayer(){
-  if(player.i
+  if(player.invuln > 0 && Math.floor(player.invuln/4) % 2 === 0) return;
+
+  var crouching = input.crouch && player.onGround;
+  var walkFrame = Math.floor(player.anim) % 2;
+
+  var sx = player.x - state.camX;
+  var sy = player.y;
+
+  ctx.save();
+  if(crouching){
+    ctx.translate(0, sy + player.h);
+    ctx.scale(1, 0.68);
+    ctx.translate(0, -(sy + player.h));
+  }
+
+  // Cap
+  ctx.fillStyle = '#e52521';
+  ctx.fillRect(sx+3, sy,    18, 7);
+  ctx.fillRect(sx+1, sy+4,  22, 4);
+
+  // Face
+  ctx.fillStyle = '#ffcc99';
+  ctx.fillRect(sx+4, sy+8, 16, 10);
+
+  // Hair / sideburn / moustache
+  ctx.fillStyle = '#5a2d0c';
+  ctx.fillRect(sx+2,  sy+10, 4, 6);
+  ctx.fillRect(sx+18, sy+10, 4, 4);
+  ctx.fillRect(sx+8,  sy+14, 8, 3);
+
+  // Eye
+  ctx.fillStyle = '#000';
+  ctx.fillRect(sx + (player.facing > 0 ? 14 : 8), sy+10, 2, 4);
+
+  // Shirt
+  ctx.fillStyle = '#e52521';
+  ctx.fillRect(sx+3, sy+18, 18, 8);
+
+  // Overalls
+  ctx.fillStyle = '#1a55d0';
+  ctx.fillRect(sx+3, sy+22, 18, 6);
+
+  // Legs
+  ctx.fillStyle = '#5a2d0c';
+  if(!player.onGround){
+    ctx.fillRect(sx+2,  sy+26, 8, 4);
+    ctx.fillRect(sx+14, sy+26, 8, 4);
+  } else if(Math.abs(player.vx) > 0.5){
+    if(walkFrame === 0){
+      ctx.fillRect(sx+4,  sy+26, 7, 4);
+      ctx.fillRect(sx+13, sy+24, 7, 4);
+    } else {
+      ctx.fillRect(sx+4,  sy+24, 7, 4);
+      ctx.fillRect(sx+13, sy+26, 7, 4);
+    }
+  } else {
+    ctx.fillRect(sx+4,  sy+26, 7, 4);
+    ctx.fillRect(sx+13, sy+26, 7, 4);
+  }
+
+  ctx.restore();
+}
+
+function drawCoinAnims(){
+  for(var i=0; i<coinAnims.length; i++){
+    var c = coinAnims[i];
+    c.t++;
+    var sx = c.x - state.camX;
+    var sy = c.y - c.t*2;
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    if(c.t < 20) ctx.fillText('+200', sx, sy-8);
+  }
+  coinAnims = coinAnims.filter(function(c){ return c.t < 25; });
+}
+
+function drawHUD(){
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0,0,W,34);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('MARIO', 16, 12);
+  ctx.fillText(('000000' + state.score).slice(-6), 16, 26);
+
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.arc(150, 20, 6, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText('x ' + ('00' + state.coins).slice(-2), 162, 20);
+
+  ctx.fillText('WORLD 1-1', 260, 20);
+  ctx.fillText('TIME ' + state.time, 400, 20);
+  ctx.fillText('LIVES x ' + state.lives, 260, 12);
+}
+
+function drawOverlay(){
+  if(state.paused){
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 40px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('PAUSED', W/2, H/2);
+    ctx.font = '16px monospace';
+    ctx.fillText('ZR or P to resume', W/2, H/2+40);
+  }
+  if(state.gameOver){
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#e52521';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GAME OVER', W/2, H/2-20);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px monospace';
+    ctx.fillText('Score: ' + state.score, W/2, H/2+40);
+    ctx.fillText('ZR or R to play again', W/2, H/2+70);
+  }
+  if(state.win){
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#ffd700';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('YOU WIN!', W/2, H/2-20);
+    ctx.fillStyle = '#fff';
+    ctx.font = '20px monospace';
+    ctx.fillText('Score: ' + state.score, W/2, H/2+30);
+    ctx.fillText('Coins: ' + state.coins, W/2, H/2+60);
+    ctx.fillText('ZR or R to play again', W/2, H/2+100);
+  }
+}
+
+// ===============================================================
+// MAIN LOOP
+// ===============================================================
+var last = performance.now();
+function loop(now){
+  var dt = Math.min(now - last, 50);
+  last = now;
+
+  pollInput();
+
+  if(!state.paused && !state.gameOver && !state.win){
+    updatePlayer(dt);
+    updateEnemies();
+    checkCoins();
+    checkWin();
+    updateCamera();
+    updateTime(dt);
+  }
+
+  ctx.clearRect(0,0,W,H);
+  drawBackground();
+  drawTiles();
+  for(var i=0; i<enemies.length; i++){
+    if(enemies[i].alive) drawGoomba(enemies[i]);
+  }
+  drawCoinAnims();
+  drawPlayer();
+  drawHUD();
+  drawOverlay();
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
