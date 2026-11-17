@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VoxelCraft 3D - Canvas 2D (Switch 2 Edition)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body { background: #111; overflow: hidden; font-family: monospace; color: #fff; }
+  canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+  #hud {
+    position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.6);
+    padding: 6px 10px; border: 1px solid #555; font-size: 13px; line-height: 1.4; pointer-events: none;
+  }
+  #hotbar {
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; background: rgba(0,0,0,0.7); padding: 6px; border: 2px solid #777;
+  }
+  .slot {
+    width: 38px; height: 38px; border: 2px solid #444; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: bold;
+    text-shadow: 1px 1px 0 #000;
+  }
+  .slot.active { border-color: #fff; transform: scale(1.1); }
+  #controls-bar {
+    position: fixed; top: 8px; right: 8px; display: flex; gap: 6px;
+  }
+  button {
+    background: #222; color: #fff; border: 1px solid #888; padding: 6px 10px;
+    font-family: monospace; font-size: 12px; cursor: pointer;
+  }
+  button:active { background: #555; }
+  #touch-ui {
+    display: none; position: fixed; inset: 0; pointer-events: none;
+  }
+  .t-btn {
+    position: absolute; pointer-events: auto; background: rgba(255,255,255,0.18);
+    border: 2px solid rgba(255,255,255,0.45); color: #fff; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; border-radius: 8px;
+  }
+  .t-btn:active { background: rgba(255,255,255,0.4); }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <div><b>VOXELCRAFT 2D-RENDERER (NO-WEBGL)</b></div>
+  <div id="stats">FPS: 0 | Pad: Brak (rusz gałką)</div>
+  <div>L-Stick: Ruch | R-Stick: Kamera | B: Skok</div>
+  <div>ZR/Y: Kop | ZL/A: Staw | L/R: Blok | X: Sprint</div>
+</div>
+
+<div id="controls-bar">
+  <button id="btn-scale">Skala: 0.5x</button>
+  <button id="btn-touch">Dotyk: WYŁ</button>
+  <button id="btn-regen">Nowy Świat</button>
+</div>
+
+<div id="hotbar"></div>
+
+<div id="touch-ui">
+  <div class="t-btn" id="t-up" style="left:65px; bottom:115px; width:50px; height:50px;">W</div>
+  <div class="t-btn" id="t-down" style="left:65px; bottom:15px; width:50px; height:50px;">S</div>
+  <div class="t-btn" id="t-left" style="left:15px; bottom:65px; width:50px; height:50px;">A</div>
+  <div class="t-btn" id="t-right" style="left:115px; bottom:65px; width:50px; height:50px;">D</div>
+
+  <div class="t-btn" id="t-dig" style="right:130px; bottom:75px; width:60px; height:50px;">KOP</div>
+  <div class="t-btn" id="t-place" style="right:60px; bottom:75px; width:60px; height:50px;">STAW</div>
+  <div class="t-btn" id="t-jump" style="right:60px; bottom:15px; width:130px; height:50px;">SKOK</div>
+</div>
+
+<script>
+(function() {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const statsEl = document.getElementById('stats');
+  const hotbarEl = document.getElementById('hotbar');
+
+  // --- USTAWIENIA WYDAJNOŚCI POD SWITCHA ---
+  let renderScale = 0.5; // 0.5x = 640x360 w trybie 720p (mega płynne na CPU)
+  const WORLD_X = 24;
+  const WORLD_Y = 16;
+  const WORLD_Z = 24;
+  const RENDER_DIST = 11; // Zasięg rysowania w blokach
+
+  // Typy bloków i kolory ścian (góra, bok X, bok Z, spód)
+  const BLOCKS = [
+    null,
+    { name: 'Trawa',  top: '#59a637', sideX: '#6b5134', sideZ: '#574129', bot: '#4a3621' },
+    { name: 'Ziemia', top: '#785a3a', sideX: '#664c30', sideZ: '#574028', bot: '#4a3621' },
+    { name: 'Kamień', top: '#8c8c8c', sideX: '#757575', sideZ: '#636363', bot: '#525252' },
+    { name: 'Drewno', top: '#a68250', sideX: '#614423', sideZ: '#4f371c', bot: '#a68250' },
+    { name: 'Liście', top: '#3a7d28', sideX: '#2f6920', sideZ: '#265719', bot: '#1f4714' },
+    { name: 'Deski',  top: '#c29b61', sideX: '#ab8752', sideZ: '#947444', bot: '#7d6138' },
+    { name: 'Cegła',  top: '#a84336', sideX: '#91382c', sideZ: '#7a2e24', bot: '#63241c' }
+  ];
+
+  let selectedBlock = 1;
+  const world = new Uint8Array(WORLD_X * WORLD_Y * WORLD_Z);
+
+  function idx(x, y, z) {
+    return x + z * WORLD_X + y * WORLD_X * WORLD_Z;
+  }
+
+  function getBlock(x, y, z) {
+    if (x < 0 || x >= WORLD_X || y < 0 || y >= WORLD_Y || z < 0 || z >= WORLD_Z) return 0;
+    return world[idx(x, y, z)];
+  }
+
+  function setBlock(x, y, z, id) {
+    if (x < 0 || x >= WORLD_X || y < 0 || y >= WORLD_Y || z < 0 || z >= WORLD_Z) return;
+    world[idx(x, y, z)] = id;
+  }
+
+  // --- GENERATOR ŚWIATA ---
+  function generateWorld() {
+    world.fill(0);
+    const seed = Math.random() * 100;
+    for (let x = 0; x < WORLD_X; x++) {
+      for (let z = 0; z < WORLD_Z; z++) {
+        const h = Math.floor(
+          4 + Math.sin((x + seed) * 0.25) * 2 + Math.cos((z + seed) * 0.25) * 2
+        );
+        for (let y = 0; y <= h; y++) {
+          if (y === h) setBlock(x, y, z, 1);
+          else if (y >= h - 2) setBlock(x, y, z, 2);
+          else setBlock(x, y, z, 3);
+        }
+        // Proste drzewa
+        if (x > 2 && x < WORLD_X - 3 && z > 2 && z < WORLD_Z - 3 && Math.random() < 0.04) {
+          const th = h + 1;
+          for (let ty = 0; ty < 3; ty++) setBlock(x, th + ty, z, 4);
+          for (let lx = -1; lx <= 1; lx++) {
+            for (let lz = -1; lz <= 1; lz++) {
+              setBlock(x + lx, th + 3, z + lz, 5);
+            }
+          }
+          setBlock(x, th + 4, z, 5);
+        }
+      }
+    }
+  }
+
+  // --- GRACZ ---
+  const player = {
+    x: WORLD_X / 2,
+    y: 10,
+    z: WORLD_Z / 2,
+    vx: 0, vy: 0, vz: 0,
+    yaw: 0, pitch: 0.2,
+    onGround: false
+  };
+
+  function resetPlayer() {
+    player.x = WORLD_X / 2;
+    player.y = 11;
+    player.z = WORLD_Z / 2;
+    player.vx = player.vy = player.vz = 0;
+  }
+
+  // --- BUDOWA PASKA EKWIUNKU ---
+  function buildHotbar() {
+    hotbarEl.innerHTML = '';
+    for (let i = 1; i < BLOCKS.length; i++) {
+      const div = document.createElement('div');
+      div.className = 'slot' + (i === selectedBlock ? ' active' : '');
+      div.style.background = BLOCKS[i].top;
+      div.textContent = i;
+      div.onclick = () => { selectedBlock = i; buildHotbar(); };
+      hotbarEl.appendChild(div);
+    }
+  }
+
+  // --- STEROWANIE (KLAWIATURA + JOY-CONY + DOTYK) ---
+  const keys = {};
+  const touchState = { up: false, down: false, left: false, right: false };
+  let padDebounce = { l: false, r: false, dig: false, place: false, minus: false, plus: false };
+
+  window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code.startsWith('Digit')) {
+      const n = parseInt(e.code.replace('Digit', ''), 10);
+      if (n >= 1 && n < BLOCKS.length) { selectedBlock = n; buildHotbar(); }
+    }
+    if (e.code === 'KeyQ') digBlock();
+    if (e.code === 'KeyE') placeBlock();
+  });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  // Mysz (drag do obracania na PC / dotyku)
+  let dragging = false, lastMX = 0, lastMY = 0;
+  canvas.addEventListener('mousedown', e => {
+    if (e.button === 0) { dragging = true; lastMX = e.clientX; lastMY = e.clientY; }
+    if (e.button === 2) placeBlock();
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    player.yaw += (e.clientX - lastMX) * 0.006;
+    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + (e.clientY - lastMY) * 0.006));
+    lastMX = e.clientX; lastMY = e.clientY;
+  });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('dblclick', () => digBlock());
+
+  // Przyciski UI
+  document.getElementById('btn-scale').onclick = function() {
+    renderScale = renderScale === 0.5 ? 0.35 : (renderScale === 0.35 ? 0.75 : 0.5);
+    this.textContent = 'Skala: ' + renderScale + 'x';
+    resize();
+  };
+  document.getElementById('btn-touch').onclick = function() {
+    const tui = document.getElementById('touch-ui');
+    const vis = tui.style.display === 'block';
+    tui.style.display = vis ? 'none' : 'block';
+    this.textContent = 'Dotyk: ' + (vis ? 'WYŁ' : 'WŁ');
+  };
+  document.getElementById('btn-regen').onclick = () => { generateWorld(); resetPlayer(); };
+
+  function bindTouch(id, prop) {
+    const el = document.getElementById(id);
+    el.addEventListener('touchstart', e => { e.preventDefault(); touchState[prop] = true; });
+    el.addEventListener('touchend', e => { e.preventDefault(); touchState[prop] = false; });
+  }
+  bindTouch('t-up', 'up'); bindTouch('t-down', 'down');
+  bindTouch('t-left', 'left'); bindTouch('t-right', 'right');
+  document.getElementById('t-dig').addEventListener('touchstart', e => { e.preventDefault(); digBlock(); });
+  document.getElementById('t-place').addEventListener('touchstart', e => { e.preventDefault(); placeBlock(); });
+  document.getElementById('t-jump').addEventListener('touchstart', e => { e.preventDefault(); jump(); });
+
+  function jump() {
+    if (player.onGround) { player.vy = 0.24; player.onGround = false; }
+  }
+
+  // --- RAYCASTING (CELOWNIK) ---
+  function raycast() {
+    const eyeY = player.y + 1.5;
+    const dx = Math.sin(player.yaw) * Math.cos(player.pitch);
+    const dy = -Math.sin(player.pitch);
+    const dz = Math.cos(player.yaw) * Math.cos(player.pitch);
+
+    let prevX = Math.floor(player.x);
+    let prevY = Math.floor(eyeY);
+    let prevZ = Math.floor(player.z);
+
+    for (let t = 0.2; t <= 5.0; t += 0.1) {
+      const rx = Math.floor(player.x + dx * t);
+      const ry = Math.floor(eyeY + dy * t);
+      const rz = Math.floor(player.z + dz * t);
+      if (getBlock(rx, ry, rz) !== 0) {
+        return { hit: [rx, ry, rz], prev: [prevX, prevY, prevZ] };
+      }
+      prevX = rx; prevY = ry; prevZ = rz;
+    }
+    return null;
+  }
+
+  function digBlock() {
+    const res = raycast();
+    if (res) setBlock(res.hit[0], res.hit[1], res.hit[2], 0);
+  }
+
+  function placeBlock() {
+    const res = raycast();
+    if (res) {
+      const [px, py, pz] = res.prev;
+      // Nie stawiaj wewnątrz gracza
+      if (Math.floor(player.x) === px && Math.floor(player.z) === pz &&
+         (Math.floor(player.y) === py || Math.floor(player.y + 1) === py)) return;
+      setBlock(px, py, pz, selectedBlock);
+    }
+  }
+
+  // --- OBSŁUGA JOY-CONÓW (GAMEPAD API) ---
+  function pollGamepad(dt) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (let i = 0; i < pads.length; i++) {
+      if (pads[i] && pads[i].connected) { gp = pads[i]; break; }
+    }
+    if (!gp) return null;
+
+    const deadzone = 0.18;
+    const ax0 = Math.abs(gp.axes[0]) > deadzone ? gp.axes[0] : 0; // L-Stick X
+    const ax1 = Math.abs(gp.axes[1]) > deadzone ? gp.axes[1] : 0; // L-Stick Y
+    const ax2 = gp.axes.length > 2 && Math.abs(gp.axes[2]) > deadzone ? gp.axes[2] : 0; // R-Stick X
+    const ax3 = gp.axes.length > 3 && Math.abs(gp.axes[3]) > deadzone ? gp.axes[3] : 0; // R-Stick Y
+
+    player.yaw += ax2 * 2.4 * dt;
+    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + ax3 * 1.8 * dt));
+
+    const b = gp.buttons;
+    const pressed = idx => b[idx] && b[idx].pressed;
+
+    // Nintendo Switch layout: 0=B, 1=A, 2=Y, 3=X, 4=L, 5=R, 6=ZL, 7=ZR, 8=-, 9=+
+    if (pressed(0)) jump(); // B = Skok
+
+    const digNow = pressed(7) || pressed(2); // ZR lub Y
+    if (digNow && !padDebounce.dig) digBlock();
+    padDebounce.dig = digNow;
+
+    const placeNow = pressed(6) || pressed(1); // ZL lub A
+    if (placeNow && !padDebounce.place) placeBlock();
+    padDebounce.place = placeNow;
+
+    const lNow = pressed(4);
+    if (lNow && !padDebounce.l) {
+      selectedBlock = selectedBlock <= 1 ? BLOCKS.length - 1 : selectedBlock - 1;
+      buildHotbar();
+    }
+    padDebounce.l = lNow;
+
+    const rNow = pressed(5);
+    if (rNow && !padDebounce.r) {
+      selectedBlock = selectedBlock >= BLOCKS.length - 1 ? 1 : selectedBlock + 1;
+      buildHotbar();
+    }
+    padDebounce.r = rNow;
+
+    const minusNow = pressed(8);
+    if (minusNow && !padDebounce.minus) resetPlayer();
+    padDebounce.minus = minusNow;
+
+    const plusNow = pressed(9);
+    if (plusNow && !padDebounce.plus) { generateWorld(); resetPlayer(); }
+    padDebounce.plus = plusNow;
+
+    return { moveX: ax0, moveZ: -ax1, sprint: pressed(3), id: gp.id };
+  }
+
+  // --- FIZYKA I KOLIZJE ---
+  function collides(x, y, z) {
+    const r = 0.28;
+    const minX = Math.floor(x - r), maxX = Math.floor(x + r);
+    const minY = Math.floor(y),     maxY = Math.floor(y + 1.65);
+    const minZ = Math.floor(z - r), maxZ = Math.floor(z + r);
+    for (let bx = minX; bx <= maxX; bx++) {
+      for (let by = minY; by <= maxY; by++) {
+        for (let bz = minZ; bz <= maxZ; bz++) {
+          if (getBlock(bx, by, bz) !== 0) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function updatePhysics(dt, padInput) {
+    let forward = 0, strafe = 0;
+    let sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+
+    if (keys['KeyW'] || touchState.up) forward += 1;
+    if (keys['KeyS'] || touchState.down) forward -= 1;
+    if (keys['KeyD'] || touchState.right) strafe += 1;
+    if (keys['KeyA'] || touchState.left) strafe -= 1;
+    if (keys['Space']) jump();
+
+    if (keys['ArrowLeft']) player.yaw -= 2.2 * dt;
+    if (keys['ArrowRight']) player.yaw += 2.2 * dt;
+    if (keys['ArrowUp']) player.pitch = Math.max(-1.3, player.pitch - 1.6 * dt);
+    if (keys['ArrowDown']) player.pitch = Math.min(1.3, player.pitch + 1.6 * dt);
+
+    if (padInput) {
+      forward += padInput.moveZ;
+      strafe += padInput.moveX;
+      if (padInput.sprint) sprint = true;
+    }
+
+    const speed = (sprint ? 7.2 : 4.5) * dt;
+    const sinY = Math.sin(player.yaw);
+    const cosY = Math.cos(player.yaw);
+
+    const mx = (sinY * forward + cosY * strafe) * speed;
+    const mz = (cosY * forward - sinY * strafe) * speed;
+
+    if (!collides(player.x + mx, player.y, player.z)) player.x += mx;
+    if (!collides(player.x, player.y, player.z + mz)) player.z += mz;
+
+    // Grawitacja
+    player.vy -= 0.65 * dt;
+    if (!collides(player.x, player.y + player.vy, player.z)) {
+      player.y += player.vy;
+      player.onGround = false;
+    } else {
+      if (player.vy < 0) player.onGround = true;
+      player.vy = 0;
+    }
+
+    if (player.y < -10) resetPlayer();
+  }
+
+  // --- PROGRAMOWY SILNIK 3D (CANVAS 2D RASTERIZER) ---
+  // Definicja 6 ścian sześcianu (wierzchołki + wektor normalny)
+  const FACES = [
+    { dir: [0, 1, 0],  shade: 'top',   verts: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]] }, // Góra
+    { dir: [0, -1, 0], shade: 'bot',   verts: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] }, // Dół
+    { dir: [1, 0, 0],  shade: 'sideX', verts: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] }, // +X
+    { dir: [-1, 0, 0], shade: 'sideX', verts: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] }, // -X
+    { dir: [0, 0, 1],  shade: 'sideZ', verts: [[1,0,1],[1,1,1],[0,1,1],[0,0,1]] }, // +Z
+    { dir: [0, 0, -1], shade: 'sideZ', verts: [[0,0,0],[0,1,0],[1,1,0],[1,0,0]] }  // -Z
+  ];
+
+  const quadPool = [];
+  for (let i = 0; i < 6000; i++) {
+    quadPool.push({ x0:0, y0:0, x1:0, y1:0, x2:0, y2:0, x3:0, y3:0, dist:0, color:'', outline:false });
+  }
+
+  function render() {
+    const W = canvas.width;
+    const H = canvas.height;
+    const halfW = W * 0.5;
+    const halfH = H * 0.5;
+    const fov = halfH * 1.15;
+
+    // Niebo
+    ctx.fillStyle = '#78a7ff';
+    ctx.fillRect(0, 0, W, H);
+
+    const camX = player.x;
+    const camY = player.y + 1.5;
+    const camZ = player.z;
+
+    const cosYaw = Math.cos(-player.yaw);
+    const sinYaw = Math.sin(-player.yaw);
+    const cosPitch = Math.cos(-player.pitch);
+    const sinPitch = Math.sin(-player.pitch);
+
+    const target = raycast();
+    const hitBlock = target ? target.hit : null;
+
+    let quadCount = 0;
+
+    const minX = Math.max(0, Math.floor(camX - RENDER_DIST));
+    const maxX = Math.min(WORLD_X - 1, Math.ceil(camX + RENDER_DIST));
+    const minY = Math.max(0, Math.floor(camY - RENDER_DIST));
+    const maxY = Math.min(WORLD_Y - 1, Math.ceil(camY + RENDER_DIST));
+    const minZ = Math.max(0, Math.floor(camZ - RENDER_DIST));
+    const maxZ = Math.min(WORLD_Z - 1, Math.ceil(camZ + RENDER_DIST));
+
+    for (let x = minX; x <= maxX; x++) {
+      for (let y = minY; y <= maxY; y++) {
+        for (let z = minZ; z <= maxZ; z++) {
+          const bId = getBlock(x, y, z);
+          if (bId === 0) continue;
+
+          const dxCenter = (x + 0.5) - camX;
+          const dyCenter = (y + 0.5) - camY;
+          const dzCenter = (z + 0.5) - camZ;
+          const distSq = dxCenter*dxCenter + dyCenter*dyCenter + dzCenter*dzCenter;
+          if (distSq > RENDER_DIST * RENDER_DIST) continue;
+
+          // Szybki frustum check (czy blok jest przed kamerą)
+          const fz = dxCenter * (-sinYaw) + dzCenter * cosYaw;
+          if (fz < -1.2) continue;
+
+          const blockDef = BLOCKS[bId];
+          const isTargeted = hitBlock && hitBlock[0] === x && hitBlock[1] === y && hitBlock[2] === z;
+
+          for (let f = 0; f < 6; f++) {
+            const face = FACES[f];
+            const nx = face.dir[0], ny = face.dir[1], nz = face.dir[2];
+
+            // 1. Occlusion culling (sąsiedni blok zasłania ścianę)
+            if (getBlock(x + nx, y + ny, z + nz) !== 0) continue;
+
+            // 2. Backface culling (ściana odwrócona od gracza)
+            const faceCenterX = x + 0.5 + nx * 0.5 - camX;
+            const faceCenterY = y + 0.5 + ny * 0.5 - camY;
+            const faceCenterZ = z + 0.5 + nz * 0.5 - camZ;
+            if (faceCenterX * nx + faceCenterY * ny + faceCenterZ * nz >= 0) continue;
+
+            if (quadCount >= quadPool.length) break;
+            const q = quadPool[quadCount];
+
+            // Projekcja 4 wierzchołków ściany
+            let behind = false;
+            for (let v = 0; v < 4; v++) {
+              const vx = x + face.verts[v][0] - camX;
+              const vy = y + face.verts[v][1] - camY;
+              const vz = z + face.verts[v][2] - camZ;
+
+              // Obrót Yaw
+              const rx = vx * cosYaw - vz * sinYaw;
+              const rz1 = vx * sinYaw + vz * cosYaw;
+
+              // Obrót Pitch
+              const ry = vy * cosPitch - rz1 * sinPitch;
+              const rz = vy * sinPitch + rz1 * cosPitch;
+
+              if (rz <= 0.12) { behind = true; break; }
+
+              const sx = halfW + (rx / rz) * fov;
+              const sy = halfH - (ry / rz) * fov;
+
+              if (v === 0) { q.x0 = sx; q.y0 = sy; }
+              else if (v === 1) { q.x1 = sx; q.y1 = sy; }
+              else if (v === 2) { q.x2 = sx; q.y2 = sy; }
+              else { q.x3 = sx; q.y3 = sy; }
+            }
+
+            if (behind) continue;
+
+            q.dist = faceCenterX*faceCenterX + faceCenterY*faceCenterY + faceCenterZ*faceCenterZ;
+            q.color = blockDef[face.shade];
+            q.outline = isTargeted;
+            quadCount++;
+          }
+        }
+      }
+    }
+
+    // Sortowanie ścian od najdalszej do najbliższej (Painter's Algorithm)
+    const activeQuads = quadPool.slice(0, quadCount);
+    activeQuads.sort((a, b) => b.dist - a.dist);
+
+    // Rysowanie wielokątów w Canvas 2D
+    for (let i = 0; i < quadCount; i++) {
+      const q = activeQuads[i];
+      ctx.beginPath();
+      ctx.moveTo(q.x0, q.y0);
+      ctx.lineTo(q.x1, q.y1);
+      ctx.lineTo(q.x2, q.y2);
+      ctx.lineTo(q.x3, q.y3);
+      ctx.closePath();
+
+      ctx.fillStyle = q.color;
+      ctx.fill();
+
+      if (q.outline) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Celownik na środku ekranu
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(halfW - 6, halfH); ctx.lineTo(halfW + 6, halfH);
+    ctx.moveTo(halfW, halfH - 6); ctx.lineTo(halfW, halfH + 6);
+    ctx.stroke();
+  }
+
+  // --- PĘTLA GŁÓWNA ---
+  function resize() {
+    canvas.width = Math.floor(window.innerWidth * renderScale);
+    canvas.height = Math.floor(window.innerHeight * renderScale);
+  }
+  window.addEventListener('resize', resize);
+
+  generateWorld();
+  buildHotbar();
+  resize();
+
+  let lastTime = performance.now();
+  let frames = 0, fpsTimer = 0, currentFps = 0;
+
+  function loop(now) {
+    const dt = Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+
+    frames++;
+    fpsTimer += dt;
+    if (fpsTimer >= 0.5) {
+      currentFps = Math.round(frames / fpsTimer);
+      frames = 0;
+      fpsTimer = 0;
+    }
+
+    const padInput = pollGamepad(dt);
+    updatePhysics(dt, padInput);
+    render();
+
+    statsEl.textContent = `FPS: ${currentFps} | Skala: ${renderScale}x | Pad: ${padInput ? 'Połączony' : 'Brak (rusz gałką)'}`;
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
