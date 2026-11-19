@@ -9,7 +9,7 @@
   body { background: #111; overflow: hidden; font-family: monospace; color: #fff; }
   canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
   #hud {
-    position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.65);
+    position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.68);
     padding: 6px 10px; border: 1px solid #555; font-size: 13px; line-height: 1.4; pointer-events: none;
   }
   #hotbar {
@@ -47,8 +47,8 @@
 
 <div id="hud">
   <div><b>VOXELCRAFT 3D (WEBKIT CANVAS 2D - ZERO WEBGL)</b></div>
-  <div id="stats">FPS: 0 | Pad: Brak (rusz gałką)</div>
-  <div>Lewy drążek: Ruch (relatywny do kamery 360°) | Prawy drążek: Kamera 360°</div>
+  <div id="stats">FPS: 0 | Pady: 0</div>
+  <div>Lewy drążek: Chodzenie 360° | Prawy drążek: Obrót kamery góra/dół/lewo/prawo</div>
   <div>B: Skok | ZR/Y: Kop | ZL/A: Staw | L/R: Blok | X: Sprint | -/+: Reset/Świat</div>
 </div>
 
@@ -78,7 +78,7 @@
   const statsEl = document.getElementById('stats');
   const hotbarEl = document.getElementById('hotbar');
 
-  // --- USTAWIENIA POD WEBKIT SWITCHA 2 (ZERO WEBGL) ---
+  // --- USTAWIENIA POD WEBKIT SWITCHA 2 (CZYSTY CANVAS 2D BEZ WEBGL) ---
   let renderScale = 0.5;
   const WORLD_X = 28;
   const WORLD_Y = 16;
@@ -142,13 +142,14 @@
   }
 
   // --- GRACZ ---
+  // yaw = 0 patrzy w stronę +Z; yaw rośnie przy obrocie w PRAWO; pitch > 0 patrzy w GÓRĘ, pitch < 0 patrzy w DÓŁ
   const player = {
     x: WORLD_X / 2,
     y: 10,
     z: WORLD_Z / 2,
     vy: 0,
     yaw: 0,
-    pitch: 0.15,
+    pitch: -0.15,
     onGround: false
   };
 
@@ -157,23 +158,6 @@
     player.y = 11;
     player.z = WORLD_Z / 2;
     player.vy = 0;
-  }
-
-  // --- WSPÓLNA BAZA WEKTORÓW KAMERY (360° SPÓJNOŚĆ RUCHU, RAYCASTU I RENDERERA) ---
-  // W układzie renderera:
-  // rx = vx * cos(-yaw) - vz * sin(-yaw) = vx * cos(yaw) + vz * sin(yaw)  -> oś PRAWO ekranu
-  // rz = vx * sin(-yaw) + vz * cos(-yaw) = -vx * sin(yaw) + vz * cos(yaw) -> oś PRZÓD ekranu
-  function getCameraBasis() {
-    const sinY = Math.sin(player.yaw);
-    const cosY = Math.cos(player.yaw);
-    return {
-      // Kierunek "do przodu" na płaszczyźnie XZ (dokładnie tam, gdzie patrzy środek ekranu)
-      fwdX: -sinY,
-      fwdZ:  cosY,
-      // Kierunek "w prawo" na płaszczyźnie XZ (dokładnie w prawo na ekranie)
-      rightX: cosY,
-      rightZ: sinY
-    };
   }
 
   // --- PASEK EKWIPUNKU ---
@@ -189,7 +173,7 @@
     }
   }
 
-  // --- STEROWANIE (JOY-CONY + DOTYK + KLAWIATURA) ---
+  // --- STEROWANIE (DOTYK + KLAWIATURA + JOY-CONY) ---
   const keys = {};
   const touchState = { up: false, down: false, left: false, right: false };
   const padDebounce = { l: false, r: false, dig: false, place: false, minus: false, plus: false };
@@ -205,7 +189,7 @@
   });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  // Dotyk / mysz do obracania kamery
+  // Dotyk / mysz do obracania kamery (w prawo = +yaw, w górę = +pitch)
   let dragging = false, lastX = 0, lastY = 0;
   canvas.addEventListener('mousedown', e => {
     if (e.button === 0) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
@@ -215,7 +199,7 @@
   window.addEventListener('mousemove', e => {
     if (!dragging) return;
     player.yaw += (e.clientX - lastX) * 0.006;
-    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch + (e.clientY - lastY) * 0.006));
+    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - (e.clientY - lastY) * 0.006));
     lastX = e.clientX; lastY = e.clientY;
   });
 
@@ -231,7 +215,7 @@
     const tx = e.touches[0].clientX;
     const ty = e.touches[0].clientY;
     player.yaw += (tx - lastX) * 0.007;
-    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch + (ty - lastY) * 0.007));
+    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - (ty - lastY) * 0.007));
     lastX = tx; lastY = ty;
   }, { passive: true });
   canvas.addEventListener('touchend', () => { dragging = false; });
@@ -270,11 +254,10 @@
   // --- RAYCASTING (CELOWNIK 100% ZGODNY Z KAMERĄ) ---
   function raycast() {
     const eyeY = player.y + 1.5;
-    const basis = getCameraBasis();
     const cosP = Math.cos(player.pitch);
-    const dx = basis.fwdX * cosP;
-    const dy = -Math.sin(player.pitch);
-    const dz = basis.fwdZ * cosP;
+    const dx = Math.sin(player.yaw) * cosP;
+    const dy = Math.sin(player.pitch);
+    const dz = Math.cos(player.yaw) * cosP;
 
     let prevX = Math.floor(player.x);
     let prevY = Math.floor(eyeY);
@@ -307,31 +290,53 @@
     }
   }
 
-  // --- JOY-CONY: LEWY DRĄŻEK = RUCH 360°, PRAWY DRĄŻEK = OBRÓT EKRANU 360° ---
+  // --- JOY-CONY: OBSŁUGA ZARÓWNO POŁĄCZONYCH JAK I ROZDZIELONYCH PADÓW ---
   function pollGamepad(dt) {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    let gp = null;
-    for (let i = 0; i < pads.length; i++) {
-      if (pads[i] && pads[i].connected) { gp = pads[i]; break; }
+    const rawPads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const connected = [];
+    for (let i = 0; i < rawPads.length; i++) {
+      if (rawPads[i] && rawPads[i].connected) connected.push(rawPads[i]);
     }
-    if (!gp) return null;
+    if (connected.length === 0) return null;
 
-    const deadzone = 0.14;
-    const applyDeadzone = val => Math.abs(val) > deadzone ? val : 0;
+    const dz = 0.14;
+    const clean = v => (Math.abs(v) > dz ? v : 0);
 
-    // Lewy drążek (osie 0 i 1) -> chodzenie we wszystkich kierunkach względem kamery
-    const lx = applyDeadzone(gp.axes[0] || 0);
-    const ly = applyDeadzone(gp.axes[1] || 0);
+    let lx = 0, ly = 0; // Lewy drążek = TYLKO chodzenie
+    let rx = 0, ry = 0; // Prawy drążek = TYLKO obrót ekranu
+    let allButtons = [];
 
-    // Prawy drążek (osie 2 i 3) -> obracanie ekranu we wszystkich kierunkach (360° poziom + pion)
-    const rx = gp.axes.length > 2 ? applyDeadzone(gp.axes[2]) : 0;
-    const ry = gp.axes.length > 3 ? applyDeadzone(gp.axes[3]) : 0;
+    if (connected.length >= 2) {
+      // Tryb 2 osobnych Joy-Conów w WebKit Switcha (pads[0] = Lewy, pads[1] = Prawy)
+      let leftPad = connected[0];
+      let rightPad = connected[1];
+      if ((rightPad.id || '').toLowerCase().includes('(l)') || (leftPad.id || '').toLowerCase().includes('(r)')) {
+        leftPad = connected[1];
+        rightPad = connected[0];
+      }
+      lx = clean(leftPad.axes[0] || 0);
+      ly = clean(leftPad.axes[1] || 0);
+      rx = clean(rightPad.axes[0] || 0);
+      ry = clean(rightPad.axes[1] || 0);
+      allButtons = [leftPad.buttons || [], rightPad.buttons || []];
+    } else {
+      // Tryb jednego połączonego kontrolera (Handheld / Grip / Pro Controller)
+      const gp = connected[0];
+      lx = clean(gp.axes[0] || 0);
+      ly = clean(gp.axes[1] || 0);
+      rx = gp.axes.length > 2 ? clean(gp.axes[2] || 0) : 0;
+      ry = gp.axes.length > 3 ? clean(gp.axes[3] || 0) : 0;
+      allButtons = [gp.buttons || []];
+    }
 
+    // PRAWY DRĄŻEK = POPRAWNY OBRÓT EKRANU WE WSZYSTKICH KIERUNKACH
+    // rx > 0 -> obrót w prawo (+yaw), rx < 0 -> obrót w lewo (-yaw)
+    // ry < 0 (drążek w górę) -> kamera patrzy w górę (+pitch)
+    // ry > 0 (drążek w dół) -> kamera patrzy w dół (-pitch)
     player.yaw += rx * 2.6 * dt;
-    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch + ry * 2.0 * dt));
+    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - ry * 2.1 * dt));
 
-    const b = gp.buttons;
-    const pressed = idx => b[idx] && b[idx].pressed;
+    const pressed = idx => allButtons.some(b => b[idx] && b[idx].pressed);
 
     // Bindy Nintendo Switch: 0=B, 1=A, 2=Y, 3=X, 4=L, 5=R, 6=ZL, 7=ZR, 8=-, 9=+
     if (pressed(0)) jump(); // B = Skok
@@ -366,10 +371,10 @@
     if (plusNow && !padDebounce.plus) { generateWorld(); resetPlayer(); }
     padDebounce.plus = plusNow;
 
-    return { strafe: lx, forward: -ly, sprint: pressed(3) };
+    return { strafe: lx, forward: -ly, sprint: pressed(3), count: connected.length };
   }
 
-  // --- FIZYKA I CHODZENIE RELATYWNE DO KIERUNKU PATRZENIA ---
+  // --- FIZYKA I CHODZENIE 100% ZGODNE Z KIERUNKIEM PATRZENIA ---
   function collides(x, y, z) {
     const r = 0.28;
     const minX = Math.floor(x - r), maxX = Math.floor(x + r);
@@ -397,8 +402,8 @@
 
     if (keys['ArrowLeft']) player.yaw -= 2.2 * dt;
     if (keys['ArrowRight']) player.yaw += 2.2 * dt;
-    if (keys['ArrowUp']) player.pitch = Math.max(-1.45, player.pitch - 1.6 * dt);
-    if (keys['ArrowDown']) player.pitch = Math.min(1.45, player.pitch + 1.6 * dt);
+    if (keys['ArrowUp']) player.pitch = Math.min(1.45, player.pitch + 1.6 * dt);
+    if (keys['ArrowDown']) player.pitch = Math.max(-1.45, player.pitch - 1.6 * dt);
 
     if (padInput) {
       forward += padInput.forward;
@@ -406,20 +411,27 @@
       if (padInput.sprint) sprint = true;
     }
 
-    // Normalizacja wektora wychylenia drążka we wszystkich kierunkach
+    // Normalizacja wektora ruchu we wszystkich 8 kierunkach
     const mag = Math.hypot(forward, strafe);
     if (mag > 1) {
       forward /= mag;
       strafe /= mag;
     }
 
-    // Pobieramy aktualny kierunek patrzenia kamery (po obrocie o dowolny kąt, np. 180°)
-    const basis = getCameraBasis();
-    const speed = (sprint ? 7.4 : 4.6) * dt;
+    // Jednolity układ współrzędnych dla ruchu i kamery:
+    // Wektor "do przodu" (tam gdzie patrzy środek ekranu) = (sin(yaw), cos(yaw))
+    // Wektor "w prawo" (prawa strona ekranu) = (cos(yaw), -sin(yaw))
+    const sinY = Math.sin(player.yaw);
+    const cosY = Math.cos(player.yaw);
 
-    // Ruch przód/tył (fwd) + ruch na boki (right) względem aktualnej kamery
-    const mx = (basis.fwdX * forward + basis.rightX * strafe) * speed;
-    const mz = (basis.fwdZ * forward + basis.rightZ * strafe) * speed;
+    const fwdX = sinY;
+    const fwdZ = cosY;
+    const rightX = cosY;
+    const rightZ = -sinY;
+
+    const speed = (sprint ? 7.4 : 4.6) * dt;
+    const mx = (fwdX * forward + rightX * strafe) * speed;
+    const mz = (fwdZ * forward + rightZ * strafe) * speed;
 
     if (!collides(player.x + mx, player.y, player.z)) player.x += mx;
     if (!collides(player.x, player.y, player.z + mz)) player.z += mz;
@@ -466,10 +478,10 @@
     const camY = player.y + 1.5;
     const camZ = player.z;
 
-    const cosYaw = Math.cos(-player.yaw);
-    const sinYaw = Math.sin(-player.yaw);
-    const cosPitch = Math.cos(-player.pitch);
-    const sinPitch = Math.sin(-player.pitch);
+    const sinY = Math.sin(player.yaw);
+    const cosY = Math.cos(player.yaw);
+    const sinP = Math.sin(player.pitch);
+    const cosP = Math.cos(player.pitch);
 
     const target = raycast();
     const hitBlock = target ? target.hit : null;
@@ -495,7 +507,8 @@
           const distSq = dxCenter*dxCenter + dyCenter*dyCenter + dzCenter*dzCenter;
           if (distSq > RENDER_DIST * RENDER_DIST) continue;
 
-          const fz = dxCenter * sinYaw + dzCenter * cosYaw;
+          // Rzut na oś przodu kamery (sinY, cosY)
+          const fz = dxCenter * sinY + dzCenter * cosY;
           if (fz < -1.2) continue;
 
           const blockDef = BLOCKS[bId];
@@ -521,11 +534,15 @@
               const vy = y + face.verts[v][1] - camY;
               const vz = z + face.verts[v][2] - camZ;
 
-              const rx = vx * cosYaw - vz * sinYaw;
-              const rz1 = vx * sinYaw + vz * cosYaw;
+              // Transformacja do układu kamery zgodna z wektorami ruchu:
+              // rx = dot(v, right) = vx * cosY - vz * sinY
+              // rz1 = dot(v, forward) = vx * sinY + vz * cosY
+              const rx = vx * cosY - vz * sinY;
+              const rz1 = vx * sinY + vz * cosY;
 
-              const ry = vy * cosPitch - rz1 * sinPitch;
-              const rz = vy * sinPitch + rz1 * cosPitch;
+              // Pitch: pitch > 0 patrzy w górę, więc punkty wyżej (vy > 0) obniżają się na ekranie przy zadarciu głowy w górę
+              const ry = vy * cosP - rz1 * sinP;
+              const rz = vy * sinP + rz1 * cosP;
 
               if (rz <= 0.12) { behind = true; break; }
 
@@ -608,7 +625,7 @@
     updatePhysics(dt, padInput);
     render();
 
-    statsEl.textContent = `FPS: ${currentFps} | Skala: ${renderScale}x | Pad: ${padInput ? 'Połączony' : 'Brak (rusz gałką)'}`;
+    statsEl.textContent = `FPS: ${currentFps} | Skala: ${renderScale}x | Pady: ${padInput ? padInput.count : 0}`;
     requestAnimationFrame(loop);
   }
 
