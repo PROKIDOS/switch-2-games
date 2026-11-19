@@ -3,22 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>VoxelCraft 3D - Canvas 2D (Switch 2 Edition)</title>
+<title>VoxelCraft 3D - Switch 2 WebKit (No-WebGL)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
   body { background: #111; overflow: hidden; font-family: monospace; color: #fff; }
   canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
   #hud {
-    position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.6);
+    position: fixed; top: 8px; left: 8px; background: rgba(0,0,0,0.65);
     padding: 6px 10px; border: 1px solid #555; font-size: 13px; line-height: 1.4; pointer-events: none;
   }
   #hotbar {
     position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 6px; background: rgba(0,0,0,0.7); padding: 6px; border: 2px solid #777;
+    display: flex; gap: 6px; background: rgba(0,0,0,0.75); padding: 6px; border: 2px solid #777;
   }
   .slot {
-    width: 38px; height: 38px; border: 2px solid #444; display: flex;
-    align-items: center; justify-content: center; font-size: 11px; font-weight: bold;
+    width: 40px; height: 40px; border: 2px solid #444; display: flex;
+    align-items: center; justify-content: center; font-size: 12px; font-weight: bold;
     text-shadow: 1px 1px 0 #000;
   }
   .slot.active { border-color: #fff; transform: scale(1.1); }
@@ -26,7 +26,7 @@
     position: fixed; top: 8px; right: 8px; display: flex; gap: 6px;
   }
   button {
-    background: #222; color: #fff; border: 1px solid #888; padding: 6px 10px;
+    background: #222; color: #fff; border: 1px solid #888; padding: 7px 11px;
     font-family: monospace; font-size: 12px; cursor: pointer;
   }
   button:active { background: #555; }
@@ -34,11 +34,11 @@
     display: none; position: fixed; inset: 0; pointer-events: none;
   }
   .t-btn {
-    position: absolute; pointer-events: auto; background: rgba(255,255,255,0.18);
+    position: absolute; pointer-events: auto; background: rgba(255,255,255,0.2);
     border: 2px solid rgba(255,255,255,0.45); color: #fff; font-weight: bold;
     display: flex; align-items: center; justify-content: center; border-radius: 8px;
   }
-  .t-btn:active { background: rgba(255,255,255,0.4); }
+  .t-btn:active { background: rgba(255,255,255,0.45); }
 </style>
 </head>
 <body>
@@ -46,10 +46,10 @@
 <canvas id="game"></canvas>
 
 <div id="hud">
-  <div><b>VOXELCRAFT 2D-RENDERER (NO-WEBGL)</b></div>
+  <div><b>VOXELCRAFT 3D (WEBKIT CANVAS 2D - ZERO WEBGL)</b></div>
   <div id="stats">FPS: 0 | Pad: Brak (rusz gałką)</div>
-  <div>L-Stick: Ruch | R-Stick: Kamera | B: Skok</div>
-  <div>ZR/Y: Kop | ZL/A: Staw | L/R: Blok | X: Sprint</div>
+  <div>L-Stick: Ruch (8 kierunków) | R-Stick: Kamera | B: Skok</div>
+  <div>ZR/Y: Kop | ZL/A: Staw | L/R: Blok | X: Sprint | -/+: Reset/Świat</div>
 </div>
 
 <div id="controls-bar">
@@ -74,18 +74,18 @@
 <script>
 (function() {
   const canvas = document.getElementById('game');
+  // Czysty kontekst 2D bez WebGL pod przeglądarkę Switcha (NetFront/WebKit)
   const ctx = canvas.getContext('2d', { alpha: false });
   const statsEl = document.getElementById('stats');
   const hotbarEl = document.getElementById('hotbar');
 
-  // --- USTAWIENIA WYDAJNOŚCI POD SWITCHA ---
-  let renderScale = 0.5; // 0.5x = 640x360 w trybie 720p (mega płynne na CPU)
-  const WORLD_X = 24;
+  // --- USTAWIENIA WYDAJNOŚCI POD WEBKIT SWITCHA 2 ---
+  let renderScale = 0.5;
+  const WORLD_X = 28;
   const WORLD_Y = 16;
-  const WORLD_Z = 24;
-  const RENDER_DIST = 11; // Zasięg rysowania w blokach
+  const WORLD_Z = 28;
+  const RENDER_DIST = 12;
 
-  // Typy bloków i kolory ścian (góra, bok X, bok Z, spód)
   const BLOCKS = [
     null,
     { name: 'Trawa',  top: '#59a637', sideX: '#6b5134', sideZ: '#574129', bot: '#4a3621' },
@@ -121,14 +121,13 @@
     for (let x = 0; x < WORLD_X; x++) {
       for (let z = 0; z < WORLD_Z; z++) {
         const h = Math.floor(
-          4 + Math.sin((x + seed) * 0.25) * 2 + Math.cos((z + seed) * 0.25) * 2
+          4 + Math.sin((x + seed) * 0.24) * 2 + Math.cos((z + seed) * 0.24) * 2
         );
         for (let y = 0; y <= h; y++) {
           if (y === h) setBlock(x, y, z, 1);
           else if (y >= h - 2) setBlock(x, y, z, 2);
           else setBlock(x, y, z, 3);
         }
-        // Proste drzewa
         if (x > 2 && x < WORLD_X - 3 && z > 2 && z < WORLD_Z - 3 && Math.random() < 0.04) {
           const th = h + 1;
           for (let ty = 0; ty < 3; ty++) setBlock(x, th + ty, z, 4);
@@ -148,8 +147,9 @@
     x: WORLD_X / 2,
     y: 10,
     z: WORLD_Z / 2,
-    vx: 0, vy: 0, vz: 0,
-    yaw: 0, pitch: 0.2,
+    vy: 0,
+    yaw: 0,
+    pitch: 0.15,
     onGround: false
   };
 
@@ -157,10 +157,10 @@
     player.x = WORLD_X / 2;
     player.y = 11;
     player.z = WORLD_Z / 2;
-    player.vx = player.vy = player.vz = 0;
+    player.vy = 0;
   }
 
-  // --- BUDOWA PASKA EKWIUNKU ---
+  // --- PASEK EKWIPUNKU ---
   function buildHotbar() {
     hotbarEl.innerHTML = '';
     for (let i = 1; i < BLOCKS.length; i++) {
@@ -173,10 +173,10 @@
     }
   }
 
-  // --- STEROWANIE (KLAWIATURA + JOY-CONY + DOTYK) ---
+  // --- STEROWANIE (JOY-CONY + DOTYK + KLAWIATURA) ---
   const keys = {};
   const touchState = { up: false, down: false, left: false, right: false };
-  let padDebounce = { l: false, r: false, dig: false, place: false, minus: false, plus: false };
+  const padDebounce = { l: false, r: false, dig: false, place: false, minus: false, plus: false };
 
   window.addEventListener('keydown', e => {
     keys[e.code] = true;
@@ -189,23 +189,40 @@
   });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  // Mysz (drag do obracania na PC / dotyku)
-  let dragging = false, lastMX = 0, lastMY = 0;
+  // Dotyk / mysz do obracania kamery (WebKit touch & mouse)
+  let dragging = false, lastX = 0, lastY = 0;
   canvas.addEventListener('mousedown', e => {
-    if (e.button === 0) { dragging = true; lastMX = e.clientX; lastMY = e.clientY; }
+    if (e.button === 0) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
     if (e.button === 2) placeBlock();
   });
   window.addEventListener('mouseup', () => { dragging = false; });
   window.addEventListener('mousemove', e => {
     if (!dragging) return;
-    player.yaw += (e.clientX - lastMX) * 0.006;
-    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + (e.clientY - lastMY) * 0.006));
-    lastMX = e.clientX; lastMY = e.clientY;
+    player.yaw += (e.clientX - lastX) * 0.006;
+    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + (e.clientY - lastY) * 0.006));
+    lastX = e.clientX; lastY = e.clientY;
   });
+
+  canvas.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      dragging = true;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', e => {
+    if (!dragging || e.touches.length !== 1) return;
+    const tx = e.touches[0].clientX;
+    const ty = e.touches[0].clientY;
+    player.yaw += (tx - lastX) * 0.007;
+    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + (ty - lastY) * 0.007));
+    lastX = tx; lastY = ty;
+  }, { passive: true });
+  canvas.addEventListener('touchend', () => { dragging = false; });
+
   canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('dblclick', () => digBlock());
 
-  // Przyciski UI
   document.getElementById('btn-scale').onclick = function() {
     renderScale = renderScale === 0.5 ? 0.35 : (renderScale === 0.35 ? 0.75 : 0.5);
     this.textContent = 'Skala: ' + renderScale + 'x';
@@ -266,14 +283,13 @@
     const res = raycast();
     if (res) {
       const [px, py, pz] = res.prev;
-      // Nie stawiaj wewnątrz gracza
       if (Math.floor(player.x) === px && Math.floor(player.z) === pz &&
          (Math.floor(player.y) === py || Math.floor(player.y + 1) === py)) return;
       setBlock(px, py, pz, selectedBlock);
     }
   }
 
-  // --- OBSŁUGA JOY-CONÓW (GAMEPAD API) ---
+  // --- JOY-CONY (GAMEPAD API) ---
   function pollGamepad(dt) {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let gp = null;
@@ -282,55 +298,56 @@
     }
     if (!gp) return null;
 
-    const deadzone = 0.18;
-    const ax0 = Math.abs(gp.axes[0]) > deadzone ? gp.axes[0] : 0; // L-Stick X
-    const ax1 = Math.abs(gp.axes[1]) > deadzone ? gp.axes[1] : 0; // L-Stick Y
-    const ax2 = gp.axes.length > 2 && Math.abs(gp.axes[2]) > deadzone ? gp.axes[2] : 0; // R-Stick X
-    const ax3 = gp.axes.length > 3 && Math.abs(gp.axes[3]) > deadzone ? gp.axes[3] : 0; // R-Stick Y
+    const deadzone = 0.16;
+    const ax0 = Math.abs(gp.axes[0]) > deadzone ? gp.axes[0] : 0; // L-Stick Lewo/Prawo
+    const ax1 = Math.abs(gp.axes[1]) > deadzone ? gp.axes[1] : 0; // L-Stick Przód/Tył
+    const ax2 = gp.axes.length > 2 && Math.abs(gp.axes[2]) > deadzone ? gp.axes[2] : 0; // R-Stick Lewo/Prawo
+    const ax3 = gp.axes.length > 3 && Math.abs(gp.axes[3]) > deadzone ? gp.axes[3] : 0; // R-Stick Góra/Dół
 
-    player.yaw += ax2 * 2.4 * dt;
-    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + ax3 * 1.8 * dt));
+    // Prawidłowy obrót kamery prawą gałką Joy-Cona
+    player.yaw += ax2 * 2.5 * dt;
+    player.pitch = Math.max(-1.3, Math.min(1.3, player.pitch + ax3 * 1.9 * dt));
 
     const b = gp.buttons;
     const pressed = idx => b[idx] && b[idx].pressed;
 
-    // Nintendo Switch layout: 0=B, 1=A, 2=Y, 3=X, 4=L, 5=R, 6=ZL, 7=ZR, 8=-, 9=+
+    // Bindy Nintendo Switch: 0=B, 1=A, 2=Y, 3=X, 4=L, 5=R, 6=ZL, 7=ZR, 8=-, 9=+
     if (pressed(0)) jump(); // B = Skok
 
-    const digNow = pressed(7) || pressed(2); // ZR lub Y
+    const digNow = pressed(7) || pressed(2); // ZR lub Y = Kopanie
     if (digNow && !padDebounce.dig) digBlock();
     padDebounce.dig = digNow;
 
-    const placeNow = pressed(6) || pressed(1); // ZL lub A
+    const placeNow = pressed(6) || pressed(1); // ZL lub A = Stawianie
     if (placeNow && !padDebounce.place) placeBlock();
     padDebounce.place = placeNow;
 
-    const lNow = pressed(4);
+    const lNow = pressed(4); // L = Poprzedni blok
     if (lNow && !padDebounce.l) {
       selectedBlock = selectedBlock <= 1 ? BLOCKS.length - 1 : selectedBlock - 1;
       buildHotbar();
     }
     padDebounce.l = lNow;
 
-    const rNow = pressed(5);
+    const rNow = pressed(5); // R = Następny blok
     if (rNow && !padDebounce.r) {
       selectedBlock = selectedBlock >= BLOCKS.length - 1 ? 1 : selectedBlock + 1;
       buildHotbar();
     }
     padDebounce.r = rNow;
 
-    const minusNow = pressed(8);
+    const minusNow = pressed(8); // Minus = Reset pozycji
     if (minusNow && !padDebounce.minus) resetPlayer();
     padDebounce.minus = minusNow;
 
-    const plusNow = pressed(9);
+    const plusNow = pressed(9); // Plus = Nowy świat
     if (plusNow && !padDebounce.plus) { generateWorld(); resetPlayer(); }
     padDebounce.plus = plusNow;
 
-    return { moveX: ax0, moveZ: -ax1, sprint: pressed(3), id: gp.id };
+    return { strafe: ax0, forward: -ax1, sprint: pressed(3) };
   }
 
-  // --- FIZYKA I KOLIZJE ---
+  // --- FIZYKA I CHODZENIE WE WSZYSTKIE 8 KIERUNKÓW ---
   function collides(x, y, z) {
     const r = 0.28;
     const minX = Math.floor(x - r), maxX = Math.floor(x + r);
@@ -362,15 +379,23 @@
     if (keys['ArrowDown']) player.pitch = Math.min(1.3, player.pitch + 1.6 * dt);
 
     if (padInput) {
-      forward += padInput.moveZ;
-      strafe += padInput.moveX;
+      forward += padInput.forward;
+      strafe += padInput.strafe;
       if (padInput.sprint) sprint = true;
     }
 
-    const speed = (sprint ? 7.2 : 4.5) * dt;
+    // Normalizacja wektora ruchu we wszystkie 8 kierunków (równa prędkość na skosach)
+    const len = Math.hypot(forward, strafe);
+    if (len > 1) {
+      forward /= len;
+      strafe /= len;
+    }
+
+    const speed = (sprint ? 7.4 : 4.6) * dt;
     const sinY = Math.sin(player.yaw);
     const cosY = Math.cos(player.yaw);
 
+    // Forward: (sinY, cosY), Right: (cosY, -sinY)
     const mx = (sinY * forward + cosY * strafe) * speed;
     const mz = (cosY * forward - sinY * strafe) * speed;
 
@@ -390,19 +415,18 @@
     if (player.y < -10) resetPlayer();
   }
 
-  // --- PROGRAMOWY SILNIK 3D (CANVAS 2D RASTERIZER) ---
-  // Definicja 6 ścian sześcianu (wierzchołki + wektor normalny)
+  // --- PROGRAMOWY SILNIK 3D (CANVAS 2D RASTERIZER - BEZ WEBGL) ---
   const FACES = [
-    { dir: [0, 1, 0],  shade: 'top',   verts: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]] }, // Góra
-    { dir: [0, -1, 0], shade: 'bot',   verts: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] }, // Dół
-    { dir: [1, 0, 0],  shade: 'sideX', verts: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] }, // +X
-    { dir: [-1, 0, 0], shade: 'sideX', verts: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] }, // -X
-    { dir: [0, 0, 1],  shade: 'sideZ', verts: [[1,0,1],[1,1,1],[0,1,1],[0,0,1]] }, // +Z
-    { dir: [0, 0, -1], shade: 'sideZ', verts: [[0,0,0],[0,1,0],[1,1,0],[1,0,0]] }  // -Z
+    { dir: [0, 1, 0],  shade: 'top',   verts: [[0,1,0],[0,1,1],[1,1,1],[1,1,0]] },
+    { dir: [0, -1, 0], shade: 'bot',   verts: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] },
+    { dir: [1, 0, 0],  shade: 'sideX', verts: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
+    { dir: [-1, 0, 0], shade: 'sideX', verts: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
+    { dir: [0, 0, 1],  shade: 'sideZ', verts: [[1,0,1],[1,1,1],[0,1,1],[0,0,1]] },
+    { dir: [0, 0, -1], shade: 'sideZ', verts: [[0,0,0],[0,1,0],[1,1,0],[1,0,0]] }
   ];
 
   const quadPool = [];
-  for (let i = 0; i < 6000; i++) {
+  for (let i = 0; i < 6500; i++) {
     quadPool.push({ x0:0, y0:0, x1:0, y1:0, x2:0, y2:0, x3:0, y3:0, dist:0, color:'', outline:false });
   }
 
@@ -413,7 +437,6 @@
     const halfH = H * 0.5;
     const fov = halfH * 1.15;
 
-    // Niebo
     ctx.fillStyle = '#78a7ff';
     ctx.fillRect(0, 0, W, H);
 
@@ -450,7 +473,6 @@
           const distSq = dxCenter*dxCenter + dyCenter*dyCenter + dzCenter*dzCenter;
           if (distSq > RENDER_DIST * RENDER_DIST) continue;
 
-          // Szybki frustum check (czy blok jest przed kamerą)
           const fz = dxCenter * (-sinYaw) + dzCenter * cosYaw;
           if (fz < -1.2) continue;
 
@@ -461,10 +483,8 @@
             const face = FACES[f];
             const nx = face.dir[0], ny = face.dir[1], nz = face.dir[2];
 
-            // 1. Occlusion culling (sąsiedni blok zasłania ścianę)
             if (getBlock(x + nx, y + ny, z + nz) !== 0) continue;
 
-            // 2. Backface culling (ściana odwrócona od gracza)
             const faceCenterX = x + 0.5 + nx * 0.5 - camX;
             const faceCenterY = y + 0.5 + ny * 0.5 - camY;
             const faceCenterZ = z + 0.5 + nz * 0.5 - camZ;
@@ -473,18 +493,15 @@
             if (quadCount >= quadPool.length) break;
             const q = quadPool[quadCount];
 
-            // Projekcja 4 wierzchołków ściany
             let behind = false;
             for (let v = 0; v < 4; v++) {
               const vx = x + face.verts[v][0] - camX;
               const vy = y + face.verts[v][1] - camY;
               const vz = z + face.verts[v][2] - camZ;
 
-              // Obrót Yaw
               const rx = vx * cosYaw - vz * sinYaw;
               const rz1 = vx * sinYaw + vz * cosYaw;
 
-              // Obrót Pitch
               const ry = vy * cosPitch - rz1 * sinPitch;
               const rz = vy * sinPitch + rz1 * cosPitch;
 
@@ -510,11 +527,9 @@
       }
     }
 
-    // Sortowanie ścian od najdalszej do najbliższej (Painter's Algorithm)
     const activeQuads = quadPool.slice(0, quadCount);
     activeQuads.sort((a, b) => b.dist - a.dist);
 
-    // Rysowanie wielokątów w Canvas 2D
     for (let i = 0; i < quadCount; i++) {
       const q = activeQuads[i];
       ctx.beginPath();
@@ -534,7 +549,6 @@
       }
     }
 
-    // Celownik na środku ekranu
     ctx.strokeStyle = 'rgba(255,255,255,0.85)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -543,7 +557,6 @@
     ctx.stroke();
   }
 
-  // --- PĘTLA GŁÓWNA ---
   function resize() {
     canvas.width = Math.floor(window.innerWidth * renderScale);
     canvas.height = Math.floor(window.innerHeight * renderScale);
