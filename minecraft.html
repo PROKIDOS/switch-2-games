@@ -48,8 +48,8 @@
 <div id="hud">
   <div><b>VOXELCRAFT 3D (WEBKIT CANVAS 2D - ZERO WEBGL)</b></div>
   <div id="stats">FPS: 0 | Pady: 0</div>
-  <div>Lewy drążek: TYLKO chodzenie 360° | Prawy drążek: TYLKO obrót kamery</div>
-  <div>B: Skok | ZR/Y: Kop | ZL/A: Staw | L/R: Blok | X: Sprint | -/+: Reset/Świat</div>
+  <div>Lewy drążek: Chodzenie 360° | Prawy drążek: Obrót kamery</div>
+  <div>A: Skok | ZR/Y: Kop | ZL/B: Staw | L/R: Blok | X: Sprint | -/+: Reset/Świat</div>
 </div>
 
 <div id="controls-bar">
@@ -178,7 +178,6 @@
   const padDebounce = { l: false, r: false, dig: false, place: false, minus: false, plus: false };
 
   window.addEventListener('keydown', e => {
-    // Blokujemy domyślne przewijanie strony strzałkami, które generuje lewy drążek Switcha
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
       e.preventDefault();
     }
@@ -192,7 +191,7 @@
   });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  // Obrót kamery wyłącznie przez bezpośredni dotyk ekranu palcem (touch) — NIE przez emulowaną mysz z lewego drążka!
+  // Obrót kamery przez bezpośredni dotyk ekranu palcem
   let touchLookActive = false, lastX = 0, lastY = 0;
   canvas.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
@@ -280,7 +279,7 @@
     }
   }
 
-  // --- JOY-CONY: LEWY DRĄŻEK = TYLKO CHODZENIE, PRAWY DRĄŻEK = TYLKO OBRÓT EKRANU ---
+  // --- JOY-CONY: SKOK POD A (buttons[1]) ---
   function pollGamepad(dt) {
     const rawPads = navigator.getGamepads ? navigator.getGamepads() : [];
     const connected = [];
@@ -297,7 +296,6 @@
     let allButtons = [];
 
     if (connected.length >= 2) {
-      // Dwa osobne Joy-Cony
       let leftPad = connected[0];
       let rightPad = connected[1];
       if ((rightPad.id || '').toLowerCase().includes('(l)') || (leftPad.id || '').toLowerCase().includes('(r)')) {
@@ -310,7 +308,6 @@
       ry = clean(rightPad.axes[1] || 0);
       allButtons = [leftPad.buttons || [], rightPad.buttons || []];
     } else {
-      // Jeden połączony pad (Handheld / Grip / Pro Controller)
       const gp = connected[0];
       lx = clean(gp.axes[0] || 0);
       ly = clean(gp.axes[1] || 0);
@@ -319,19 +316,19 @@
       allButtons = [gp.buttons || []];
     }
 
-    // Tylko prawy drążek obraca ekran
     player.yaw += rx * 2.6 * dt;
     player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - ry * 2.1 * dt));
 
     const pressed = idx => allButtons.some(b => b[idx] && b[idx].pressed);
 
-    if (pressed(0)) jump(); // B = Skok
+    // Bindy Nintendo Switch: 0=B, 1=A, 2=Y, 3=X, 4=L, 5=R, 6=ZL, 7=ZR, 8=-, 9=+
+    if (pressed(1)) jump(); // A = Skok
 
     const digNow = pressed(7) || pressed(2); // ZR lub Y = Kopanie
     if (digNow && !padDebounce.dig) digBlock();
     padDebounce.dig = digNow;
 
-    const placeNow = pressed(6) || pressed(1); // ZL lub A = Stawianie
+    const placeNow = pressed(6) || pressed(0); // ZL lub B = Stawianie
     if (placeNow && !padDebounce.place) placeBlock();
     padDebounce.place = placeNow;
 
@@ -386,7 +383,6 @@
     let forward = 0, strafe = 0;
     let sprint = keys['ShiftLeft'] || keys['ShiftRight'];
 
-    // Jeśli pad jest podłączony, bierzemy ruch WYŁĄCZNIE z lewego drążka pada (ignorujemy emulowane strzałki Switcha, żeby nie dublować prędkości)
     if (padInput) {
       forward = padInput.forward;
       strafe = padInput.strafe;
@@ -400,7 +396,6 @@
 
     if (keys['Space']) jump();
 
-    // Normalizacja wektora ruchu we wszystkich 8 kierunkach
     const mag = Math.hypot(forward, strafe);
     if (mag > 1) {
       forward /= mag;
