@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>DOOM - Switch 2</title>
+<title>DOOM - Switch 2 (Fast)</title>
 <style>
   html, body { margin:0; padding:0; background:#000; width:100%; height:100%; overflow:hidden; font-family:monospace; }
   #game { display:block; width:100vw; height:100vh; background:#000; image-rendering:pixelated; }
@@ -25,14 +25,12 @@ var log = function(m){ debug.textContent = m; };
 var canvas = document.getElementById("game");
 var ctx = canvas.getContext("2d", { alpha: false });
 
-// ==== ROZDZIELCZOŚĆ RENDERU ====
+// Render na małym canvasie, skalowany na ekran
 var RW = 320, RH = 200;
 var buf = document.createElement("canvas");
 buf.width = RW;
 buf.height = RH;
 var bctx = buf.getContext("2d", { alpha: false });
-var imgData = bctx.createImageData(RW, RH);
-var pixels = imgData.data;
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -41,87 +39,7 @@ function resize() {
 resize();
 window.addEventListener("resize", resize);
 
-// ==== TEKSTURY ====
-function makeBrickTexture() {
-  var t = new Uint8Array(64 * 64 * 3);
-  for (var y = 0; y < 64; y++) {
-    for (var x = 0; x < 64; x++) {
-      var i = (y * 64 + x) * 3;
-      var row = Math.floor(y / 8);
-      var offset = (row % 2) * 8;
-      var xx = (x + offset) % 16;
-      var yy = y % 8;
-      if (xx < 2 || yy < 1) {
-        t[i] = 40; t[i+1] = 25; t[i+2] = 20;
-      } else {
-        var n = ((x * 13 + y * 7) % 20) - 10;
-        t[i] = Math.max(0, Math.min(255, 120 + n));
-        t[i+1] = Math.max(0, Math.min(255, 55 + n));
-        t[i+2] = Math.max(0, Math.min(255, 40 + n));
-      }
-    }
-  }
-  return t;
-}
-function makeStoneTexture() {
-  var t = new Uint8Array(64 * 64 * 3);
-  for (var y = 0; y < 64; y++) {
-    for (var x = 0; x < 64; x++) {
-      var i = (y * 64 + x) * 3;
-      var n = ((x * 11 + y * 17) % 40) - 20;
-      var n2 = ((x * 3 + y * 5) % 15) - 7;
-      t[i] = Math.max(0, Math.min(255, 60 + n + n2));
-      t[i+1] = Math.max(0, Math.min(255, 70 + n));
-      t[i+2] = Math.max(0, Math.min(255, 40 + n));
-    }
-  }
-  return t;
-}
-function makeMetalTexture() {
-  var t = new Uint8Array(64 * 64 * 3);
-  for (var y = 0; y < 64; y++) {
-    for (var x = 0; x < 64; x++) {
-      var i = (y * 64 + x) * 3;
-      var n = ((x * 7 + y * 13) % 30) - 15;
-      var px = x % 16, py = y % 16;
-      var isEdge = px === 0 || px === 15 || py === 0 || py === 15;
-      var isRivet = (px === 3 || px === 12) && (py === 3 || py === 12);
-      if (isEdge) {
-        t[i] = 30 + n; t[i+1] = 30 + n; t[i+2] = 35 + n;
-      } else if (isRivet) {
-        t[i] = 200; t[i+1] = 200; t[i+2] = 180;
-      } else {
-        t[i] = Math.max(0, Math.min(255, 80 + n));
-        t[i+1] = Math.max(0, Math.min(255, 85 + n));
-        t[i+2] = Math.max(0, Math.min(255, 95 + n));
-      }
-    }
-  }
-  return t;
-}
-function makeTechTexture() {
-  var t = new Uint8Array(64 * 64 * 3);
-  for (var y = 0; y < 64; y++) {
-    for (var x = 0; x < 64; x++) {
-      var i = (y * 64 + x) * 3;
-      var n = ((x * 5 + y * 3) % 25) - 12;
-      var isStripe = (x % 32 > 14 && x % 32 < 18);
-      var isH = (y % 32 > 28 && y % 32 < 32);
-      if (isStripe || isH) {
-        t[i] = 40 + n; t[i+1] = 180 + n; t[i+2] = 40 + n;
-      } else {
-        t[i] = Math.max(0, Math.min(255, 50 + n));
-        t[i+1] = Math.max(0, Math.min(255, 55 + n));
-        t[i+2] = Math.max(0, Math.min(255, 60 + n));
-      }
-    }
-  }
-  return t;
-}
-
-var textures = [makeBrickTexture(), makeStoneTexture(), makeMetalTexture(), makeTechTexture()];
-
-// ==== MAPA ====
+// ==== MAPA - każda wartość = inny KOLOR ściany (nie tekstura) ====
 var map = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
@@ -139,6 +57,15 @@ var map = [
   [1,0,4,0,0,0,0,0,2,0,0,0,3,0,0,1],
   [1,0,0,0,1,1,1,1,1,0,1,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+// Kolory bazowe dla typów ścian (R, G, B)
+var wallColors = [
+  [0,0,0],
+  [180, 60, 40],     // typ 1 - cegła czerwona
+  [70, 130, 50],     // typ 2 - zielony kamień
+  [110, 110, 130],   // typ 3 - metal
+  [60, 90, 160]      // typ 4 - tech niebieski
 ];
 
 function isWall(x, y) {
@@ -170,7 +97,7 @@ function spawnEnemies() {
   for (var i = 0; i < spots.length; i++) {
     enemies.push({
       x: spots[i][0]+0.5, y: spots[i][1]+0.5,
-      hp: 3, alive: true, hit: 0, anim: 0
+      hp: 3, alive: true, hit: 0
     });
   }
 }
@@ -301,7 +228,6 @@ function updateEnemies() {
     var e = enemies[i];
     if (!e.alive) continue;
     if (e.hit > 0) e.hit--;
-    e.anim += 0.1;
     var dx = e.x - player.x, dy = e.y - player.y;
     var d = Math.sqrt(dx*dx + dy*dy);
     if (d < 0.8 && Math.random() < 0.02) {
@@ -314,34 +240,16 @@ function updateEnemies() {
 
 var zBuffer = new Float32Array(RW);
 
-// ==== RENDER - zapis bezpośrednio do pixels[] ====
+// ==== RENDER - 1 fillRect per kolumna ściany ====
 function render() {
-  // Sufit
-  for (var y = 0; y < RH/2; y++) {
-    var t = y / (RH/2);
-    var r = 10 + 32 * t | 0;
-    var g = 5 + 16 * t | 0;
-    var b = 5 + 11 * t | 0;
-    var rowOff = y * RW * 4;
-    for (var x = 0; x < RW; x++) {
-      var idx = rowOff + x * 4;
-      pixels[idx] = r; pixels[idx+1] = g; pixels[idx+2] = b; pixels[idx+3] = 255;
-    }
-  }
+  // Niebo
+  bctx.fillStyle = "#1a0a0a";
+  bctx.fillRect(0, 0, RW, RH/2);
   // Podłoga
-  for (var y = RH/2; y < RH; y++) {
-    var t = (y - RH/2) / (RH/2);
-    var r = 26 - 16 * t | 0;
-    var g = 10 - 5 * t | 0;
-    var b = 5 - 0 * t | 0;
-    var rowOff = y * RW * 4;
-    for (var x = 0; x < RW; x++) {
-      var idx = rowOff + x * 4;
-      pixels[idx] = r; pixels[idx+1] = g; pixels[idx+2] = b; pixels[idx+3] = 255;
-    }
-  }
+  bctx.fillStyle = "#1a0a05";
+  bctx.fillRect(0, RH/2, RW, RH/2);
 
-  // Ściany z teksturami
+  // Ściany - JEDEN fillRect per kolumna, kolor z cieniowaniem
   for (var x = 0; x < RW; x++) {
     var cameraX = 2 * x / RW - 1;
     var rdx = player.dirX + player.planeX * cameraX;
@@ -377,38 +285,21 @@ function render() {
     if (de >= RH) de = RH - 1;
 
     var wallType = getWallType(mapX, mapY);
-    var tex = textures[wallType - 1];
-
-    var wallX;
-    if (side === 0) wallX = player.y + pd * rdy;
-    else wallX = player.x + pd * rdx;
-    wallX -= Math.floor(wallX);
-
-    var texX = (wallX * 64) | 0;
-    if (side === 0 && rdx > 0) texX = 63 - texX;
-    if (side === 1 && rdy < 0) texX = 63 - texX;
+    var col = wallColors[wallType];
 
     var sh = 1 - pd / 14;
     if (sh < 0.15) sh = 0.15;
     if (side === 1) sh *= 0.7;
 
-    var step = 64 / lh;
-    var texPos = (ds - RH/2 + lh/2) * step;
-    var texBase = texX * 3;
+    var r = (col[0] * sh) | 0;
+    var g = (col[1] * sh) | 0;
+    var b = (col[2] * sh) | 0;
 
-    for (var y = ds; y <= de; y++) {
-      var texY = (texPos | 0) & 63;
-      texPos += step;
-      var ti = texY * 64 * 3 + texBase;
-      var idx = (y * RW + x) * 4;
-      pixels[idx] = (tex[ti] * sh) | 0;
-      pixels[idx+1] = (tex[ti+1] * sh) | 0;
-      pixels[idx+2] = (tex[ti+2] * sh) | 0;
-      pixels[idx+3] = 255;
-    }
+    bctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+    bctx.fillRect(x, ds, 1, de - ds);
   }
 
-  // Wrogowie
+  // Wrogowie - pionowe pasy fillRect
   var vis = [];
   for (var i = 0; i < enemies.length; i++) {
     var e = enemies[i];
@@ -450,17 +341,13 @@ function render() {
       var isBody = relX > 0.15 && relX < 0.85;
       var isArm = (relX > 0.05 && relX < 0.15) || (relX > 0.85 && relX < 0.95);
 
-      // Ustal Y zakresy i kolory
       var y1 = 0, y2 = 0, cr = 0, cg = 0, cb = 0;
 
-      // Rogi (góra)
       if (isHorn && !isHead) {
         y1 = dsY + size * 0.08;
         y2 = dsY + size * 0.20;
         cr = 60; cg = 30; cb = 20;
-      }
-      // Głowa
-      else if (isHead) {
+      } else if (isHead) {
         if (isEye) {
           y1 = dsY + size * 0.22;
           y2 = dsY + size * 0.30;
@@ -471,15 +358,11 @@ function render() {
           y2 = dsY + size * 0.40;
           cr = 90; cg = 40; cb = 30;
         }
-      }
-      // Ręce
-      else if (isArm) {
+      } else if (isArm) {
         y1 = dsY + size * 0.45;
         y2 = dsY + size * 0.75;
         cr = 100; cg = 50; cb = 40;
-      }
-      // Tułów
-      else if (isBody) {
+      } else if (isBody) {
         y1 = dsY + size * 0.40;
         y2 = dsY + size * 0.95;
         cr = 80; cg = 30; cb = 25;
@@ -490,19 +373,11 @@ function render() {
       if (y2 > y1) {
         if (y1 < 0) y1 = 0;
         if (y2 > RH) y2 = RH;
-        for (var y = y1; y < y2; y++) {
-          var idx = (y * RW + st) * 4;
-          pixels[idx] = cr;
-          pixels[idx+1] = cg;
-          pixels[idx+2] = cb;
-          pixels[idx+3] = 255;
-        }
+        bctx.fillStyle = "rgb(" + cr + "," + cg + "," + cb + ")";
+        bctx.fillRect(st, y1, 1, y2 - y1);
       }
     }
   }
-
-  // Wyślij do bufora
-  bctx.putImageData(imgData, 0, 0);
 
   // ==== SKALUJ NA EKRAN ====
   var cw = canvas.width, ch = canvas.height;
@@ -527,7 +402,6 @@ function render() {
   // ==== BROŃ ====
   var bobY = Math.sin(player.bob) * 3 * scale;
   var gunRecoil = gunAnim * 4 * scale;
-
   var gw = dw * 0.28;
   var gh = dh * 0.30;
   var gx = cw/2 - gw/2;
@@ -554,7 +428,6 @@ function render() {
   ctx.fillRect(dxx, hudY, dw, hudH);
   ctx.fillStyle = "#3a3a2a";
   ctx.fillRect(dxx, hudY, dw, 2 * scale);
-  ctx.fillRect(dxx, dyy + dh - 2 * scale, dw, 2 * scale);
 
   var secW = dw / 3;
   ctx.fillStyle = "#000";
@@ -651,28 +524,21 @@ function render() {
 
 // ==== PĘTLA ====
 var frames = 0, fpsTime = Date.now(), lastFps = 0;
-var targetFps = 30;
-var frameInterval = 1000 / targetFps;
-var lastFrameTime = 0;
 
 function tick() {
-  var now = Date.now();
-  var delta = now - lastFrameTime;
-  if (delta < frameInterval) return;
-  lastFrameTime = now - (delta % frameInterval);
-
   updatePad();
   updateKeyboard();
   updateEnemies();
   render();
 
   frames++;
+  var now = Date.now();
   if (now - fpsTime > 1000) {
     lastFps = frames;
     frames = 0;
     fpsTime = now;
     var gp = getPad();
-    log("FPS: " + lastFps + "/" + targetFps + " | PAD: " + (gp ? "OK" : "BRAK"));
+    log("FPS: " + lastFps + " | PAD: " + (gp ? "OK" : "BRAK"));
   }
 }
 
@@ -682,7 +548,7 @@ function loop() {
 }
 
 loop();
-log("Start. Cel: 30 FPS");
+log("Start.");
 </script>
 </body>
 </html>
