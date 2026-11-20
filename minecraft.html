@@ -48,7 +48,7 @@
 <div id="hud">
   <div><b>VOXELCRAFT 3D (WEBKIT CANVAS 2D - ZERO WEBGL)</b></div>
   <div id="stats">FPS: 0 | Pady: 0</div>
-  <div>Lewy drążek: Chodzenie 360° | Prawy drążek: Obrót kamery góra/dół/lewo/prawo</div>
+  <div>Lewy drążek: TYLKO chodzenie 360° | Prawy drążek: TYLKO obrót kamery</div>
   <div>B: Skok | ZR/Y: Kop | ZL/A: Staw | L/R: Blok | X: Sprint | -/+: Reset/Świat</div>
 </div>
 
@@ -142,7 +142,6 @@
   }
 
   // --- GRACZ ---
-  // yaw = 0 patrzy w stronę +Z; yaw rośnie przy obrocie w PRAWO; pitch > 0 patrzy w GÓRĘ, pitch < 0 patrzy w DÓŁ
   const player = {
     x: WORLD_X / 2,
     y: 10,
@@ -173,12 +172,16 @@
     }
   }
 
-  // --- STEROWANIE (DOTYK + KLAWIATURA + JOY-CONY) ---
+  // --- STEROWANIE ---
   const keys = {};
   const touchState = { up: false, down: false, left: false, right: false };
   const padDebounce = { l: false, r: false, dig: false, place: false, minus: false, plus: false };
 
   window.addEventListener('keydown', e => {
+    // Blokujemy domyślne przewijanie strony strzałkami, które generuje lewy drążek Switcha
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+      e.preventDefault();
+    }
     keys[e.code] = true;
     if (e.code.startsWith('Digit')) {
       const n = parseInt(e.code.replace('Digit', ''), 10);
@@ -189,39 +192,26 @@
   });
   window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-  // Dotyk / mysz do obracania kamery (w prawo = +yaw, w górę = +pitch)
-  let dragging = false, lastX = 0, lastY = 0;
-  canvas.addEventListener('mousedown', e => {
-    if (e.button === 0) { dragging = true; lastX = e.clientX; lastY = e.clientY; }
-    if (e.button === 2) placeBlock();
-  });
-  window.addEventListener('mouseup', () => { dragging = false; });
-  window.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    player.yaw += (e.clientX - lastX) * 0.006;
-    player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - (e.clientY - lastY) * 0.006));
-    lastX = e.clientX; lastY = e.clientY;
-  });
-
+  // Obrót kamery wyłącznie przez bezpośredni dotyk ekranu palcem (touch) — NIE przez emulowaną mysz z lewego drążka!
+  let touchLookActive = false, lastX = 0, lastY = 0;
   canvas.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
-      dragging = true;
+      touchLookActive = true;
       lastX = e.touches[0].clientX;
       lastY = e.touches[0].clientY;
     }
   }, { passive: true });
   canvas.addEventListener('touchmove', e => {
-    if (!dragging || e.touches.length !== 1) return;
+    if (!touchLookActive || e.touches.length !== 1) return;
     const tx = e.touches[0].clientX;
     const ty = e.touches[0].clientY;
     player.yaw += (tx - lastX) * 0.007;
     player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - (ty - lastY) * 0.007));
     lastX = tx; lastY = ty;
   }, { passive: true });
-  canvas.addEventListener('touchend', () => { dragging = false; });
+  canvas.addEventListener('touchend', () => { touchLookActive = false; });
 
   canvas.addEventListener('contextmenu', e => e.preventDefault());
-  canvas.addEventListener('dblclick', () => digBlock());
 
   document.getElementById('btn-scale').onclick = function() {
     renderScale = renderScale === 0.5 ? 0.35 : (renderScale === 0.35 ? 0.75 : 0.5);
@@ -251,7 +241,7 @@
     if (player.onGround) { player.vy = 0.24; player.onGround = false; }
   }
 
-  // --- RAYCASTING (CELOWNIK 100% ZGODNY Z KAMERĄ) ---
+  // --- RAYCASTING ---
   function raycast() {
     const eyeY = player.y + 1.5;
     const cosP = Math.cos(player.pitch);
@@ -290,7 +280,7 @@
     }
   }
 
-  // --- JOY-CONY: OBSŁUGA ZARÓWNO POŁĄCZONYCH JAK I ROZDZIELONYCH PADÓW ---
+  // --- JOY-CONY: LEWY DRĄŻEK = TYLKO CHODZENIE, PRAWY DRĄŻEK = TYLKO OBRÓT EKRANU ---
   function pollGamepad(dt) {
     const rawPads = navigator.getGamepads ? navigator.getGamepads() : [];
     const connected = [];
@@ -302,12 +292,12 @@
     const dz = 0.14;
     const clean = v => (Math.abs(v) > dz ? v : 0);
 
-    let lx = 0, ly = 0; // Lewy drążek = TYLKO chodzenie
-    let rx = 0, ry = 0; // Prawy drążek = TYLKO obrót ekranu
+    let lx = 0, ly = 0; // Lewy drążek -> TYLKO chodzenie
+    let rx = 0, ry = 0; // Prawy drążek -> TYLKO obrót kamery
     let allButtons = [];
 
     if (connected.length >= 2) {
-      // Tryb 2 osobnych Joy-Conów w WebKit Switcha (pads[0] = Lewy, pads[1] = Prawy)
+      // Dwa osobne Joy-Cony
       let leftPad = connected[0];
       let rightPad = connected[1];
       if ((rightPad.id || '').toLowerCase().includes('(l)') || (leftPad.id || '').toLowerCase().includes('(r)')) {
@@ -320,7 +310,7 @@
       ry = clean(rightPad.axes[1] || 0);
       allButtons = [leftPad.buttons || [], rightPad.buttons || []];
     } else {
-      // Tryb jednego połączonego kontrolera (Handheld / Grip / Pro Controller)
+      // Jeden połączony pad (Handheld / Grip / Pro Controller)
       const gp = connected[0];
       lx = clean(gp.axes[0] || 0);
       ly = clean(gp.axes[1] || 0);
@@ -329,16 +319,12 @@
       allButtons = [gp.buttons || []];
     }
 
-    // PRAWY DRĄŻEK = POPRAWNY OBRÓT EKRANU WE WSZYSTKICH KIERUNKACH
-    // rx > 0 -> obrót w prawo (+yaw), rx < 0 -> obrót w lewo (-yaw)
-    // ry < 0 (drążek w górę) -> kamera patrzy w górę (+pitch)
-    // ry > 0 (drążek w dół) -> kamera patrzy w dół (-pitch)
+    // Tylko prawy drążek obraca ekran
     player.yaw += rx * 2.6 * dt;
     player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - ry * 2.1 * dt));
 
     const pressed = idx => allButtons.some(b => b[idx] && b[idx].pressed);
 
-    // Bindy Nintendo Switch: 0=B, 1=A, 2=Y, 3=X, 4=L, 5=R, 6=ZL, 7=ZR, 8=-, 9=+
     if (pressed(0)) jump(); // B = Skok
 
     const digNow = pressed(7) || pressed(2); // ZR lub Y = Kopanie
@@ -371,10 +357,16 @@
     if (plusNow && !padDebounce.plus) { generateWorld(); resetPlayer(); }
     padDebounce.plus = plusNow;
 
-    return { strafe: lx, forward: -ly, sprint: pressed(3), count: connected.length };
+    return {
+      strafe: lx,
+      forward: -ly,
+      sprint: pressed(3),
+      count: connected.length,
+      debug: `L(${lx.toFixed(1)},${ly.toFixed(1)}) R(${rx.toFixed(1)},${ry.toFixed(1)})`
+    };
   }
 
-  // --- FIZYKA I CHODZENIE 100% ZGODNE Z KIERUNKIEM PATRZENIA ---
+  // --- FIZYKA I CHODZENIE ---
   function collides(x, y, z) {
     const r = 0.28;
     const minX = Math.floor(x - r), maxX = Math.floor(x + r);
@@ -394,22 +386,19 @@
     let forward = 0, strafe = 0;
     let sprint = keys['ShiftLeft'] || keys['ShiftRight'];
 
-    if (keys['KeyW'] || touchState.up) forward += 1;
-    if (keys['KeyS'] || touchState.down) forward -= 1;
-    if (keys['KeyD'] || touchState.right) strafe += 1;
-    if (keys['KeyA'] || touchState.left) strafe -= 1;
-    if (keys['Space']) jump();
-
-    if (keys['ArrowLeft']) player.yaw -= 2.2 * dt;
-    if (keys['ArrowRight']) player.yaw += 2.2 * dt;
-    if (keys['ArrowUp']) player.pitch = Math.min(1.45, player.pitch + 1.6 * dt);
-    if (keys['ArrowDown']) player.pitch = Math.max(-1.45, player.pitch - 1.6 * dt);
-
+    // Jeśli pad jest podłączony, bierzemy ruch WYŁĄCZNIE z lewego drążka pada (ignorujemy emulowane strzałki Switcha, żeby nie dublować prędkości)
     if (padInput) {
-      forward += padInput.forward;
-      strafe += padInput.strafe;
+      forward = padInput.forward;
+      strafe = padInput.strafe;
       if (padInput.sprint) sprint = true;
+    } else {
+      if (keys['KeyW'] || keys['ArrowUp'] || touchState.up) forward += 1;
+      if (keys['KeyS'] || keys['ArrowDown'] || touchState.down) forward -= 1;
+      if (keys['KeyD'] || keys['ArrowRight'] || touchState.right) strafe += 1;
+      if (keys['KeyA'] || keys['ArrowLeft'] || touchState.left) strafe -= 1;
     }
+
+    if (keys['Space']) jump();
 
     // Normalizacja wektora ruchu we wszystkich 8 kierunkach
     const mag = Math.hypot(forward, strafe);
@@ -418,9 +407,6 @@
       strafe /= mag;
     }
 
-    // Jednolity układ współrzędnych dla ruchu i kamery:
-    // Wektor "do przodu" (tam gdzie patrzy środek ekranu) = (sin(yaw), cos(yaw))
-    // Wektor "w prawo" (prawa strona ekranu) = (cos(yaw), -sin(yaw))
     const sinY = Math.sin(player.yaw);
     const cosY = Math.cos(player.yaw);
 
@@ -507,7 +493,6 @@
           const distSq = dxCenter*dxCenter + dyCenter*dyCenter + dzCenter*dzCenter;
           if (distSq > RENDER_DIST * RENDER_DIST) continue;
 
-          // Rzut na oś przodu kamery (sinY, cosY)
           const fz = dxCenter * sinY + dzCenter * cosY;
           if (fz < -1.2) continue;
 
@@ -534,13 +519,9 @@
               const vy = y + face.verts[v][1] - camY;
               const vz = z + face.verts[v][2] - camZ;
 
-              // Transformacja do układu kamery zgodna z wektorami ruchu:
-              // rx = dot(v, right) = vx * cosY - vz * sinY
-              // rz1 = dot(v, forward) = vx * sinY + vz * cosY
               const rx = vx * cosY - vz * sinY;
               const rz1 = vx * sinY + vz * cosY;
 
-              // Pitch: pitch > 0 patrzy w górę, więc punkty wyżej (vy > 0) obniżają się na ekranie przy zadarciu głowy w górę
               const ry = vy * cosP - rz1 * sinP;
               const rz = vy * sinP + rz1 * cosP;
 
@@ -625,7 +606,7 @@
     updatePhysics(dt, padInput);
     render();
 
-    statsEl.textContent = `FPS: ${currentFps} | Skala: ${renderScale}x | Pady: ${padInput ? padInput.count : 0}`;
+    statsEl.textContent = `FPS: ${currentFps} | Skala: ${renderScale}x | Pady: ${padInput ? padInput.count + ' ' + padInput.debug : '0'}`;
     requestAnimationFrame(loop);
   }
 
